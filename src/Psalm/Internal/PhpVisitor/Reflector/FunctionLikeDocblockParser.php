@@ -20,6 +20,7 @@ use function preg_replace;
 use function preg_split;
 use function reset;
 use function str_replace;
+use function stripos;
 use function strlen;
 use function strpos;
 use function strtolower;
@@ -181,6 +182,24 @@ class FunctionLikeDocblockParser
             }
         }
 
+        if (isset($parsed_docblock->tags['psalm-if-this-is'])) {
+            foreach ($parsed_docblock->tags['psalm-if-this-is'] as $offset => $param) {
+                $line_parts = CommentAnalyzer::splitDocLine($param);
+
+                $line_parts[0] = str_replace("\n", '', preg_replace('@^[ \t]*\*@m', '', $line_parts[0]));
+
+                $info->if_this_is = [
+                    'type' => str_replace("\n", '', $line_parts[0]),
+                    'line_number' => $comment->getStartLine() + substr_count(
+                        $comment->getText(),
+                        "\n",
+                        0,
+                        $offset - $comment->getStartFilePos()
+                    ),
+                ];
+            }
+        }
+
         if (isset($parsed_docblock->tags['psalm-taint-sink'])) {
             foreach ($parsed_docblock->tags['psalm-taint-sink'] as $param) {
                 $param_parts = preg_split('/\s+/', trim($param));
@@ -199,7 +218,7 @@ class FunctionLikeDocblockParser
                 if (count($param_parts) === 2) {
                     $taint_type = $param_parts[1];
 
-                    if (substr($taint_type, 0, 5) === 'exec_') {
+                    if (strpos($taint_type, 'exec_') === 0) {
                         $taint_type = substr($taint_type, 5);
 
                         if ($taint_type === 'tainted') {
@@ -375,7 +394,7 @@ class FunctionLikeDocblockParser
             }
         }
 
-        if (strpos(strtolower($parsed_docblock->description), '@inheritdoc') !== false
+        if (stripos($parsed_docblock->description, '@inheritdoc') !== false
             || isset($parsed_docblock->tags['inheritdoc'])
             || isset($parsed_docblock->tags['inheritDoc'])
         ) {
@@ -490,7 +509,7 @@ class FunctionLikeDocblockParser
      * @param list<string> $line_parts
      * @return array{string, string} $line_parts
      */
-    private static function sanitizeAssertionLineParts(array $line_parts)
+    private static function sanitizeAssertionLineParts(array $line_parts): array
     {
         if (count($line_parts) < 2 || strpos($line_parts[1], '$') === false) {
             throw new IncorrectDocblockException('Misplaced variable');
@@ -524,13 +543,13 @@ class FunctionLikeDocblockParser
         foreach ($return_specials as $offset => $return_block) {
             $return_lines = explode("\n", $return_block);
 
-            if (!trim($return_lines[0])) {
+            if (trim($return_lines[0]) === '') {
                 return;
             }
 
             $return_block = trim($return_block);
 
-            if (!$return_block) {
+            if ($return_block === '') {
                 return;
             }
 

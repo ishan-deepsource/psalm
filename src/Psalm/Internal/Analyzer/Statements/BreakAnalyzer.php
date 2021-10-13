@@ -21,10 +21,7 @@ class BreakAnalyzer
         if ($loop_scope) {
             if ($context->break_types
                 && \end($context->break_types) === 'switch'
-                && (!$stmt->num
-                    || !$stmt->num instanceof PhpParser\Node\Scalar\LNumber
-                    || $stmt->num->value < 2
-                )
+                && (!$stmt->num instanceof PhpParser\Node\Scalar\LNumber || $stmt->num->value < 2)
             ) {
                 $loop_scope->final_actions[] = ScopeAnalyzer::ACTION_LEAVE_SWITCH;
             } else {
@@ -39,28 +36,20 @@ class BreakAnalyzer
                 $loop_scope->possibly_redefined_loop_parent_vars = $redefined_vars;
             } else {
                 foreach ($redefined_vars as $var => $type) {
-                    if (isset($loop_scope->possibly_redefined_loop_parent_vars[$var])) {
-                        $loop_scope->possibly_redefined_loop_parent_vars[$var] = Type::combineUnionTypes(
-                            $type,
-                            $loop_scope->possibly_redefined_loop_parent_vars[$var]
-                        );
-                    } else {
-                        $loop_scope->possibly_redefined_loop_parent_vars[$var] = $type;
-                    }
+                    $loop_scope->possibly_redefined_loop_parent_vars[$var] = Type::combineUnionTypes(
+                        $type,
+                        $loop_scope->possibly_redefined_loop_parent_vars[$var] ?? null
+                    );
                 }
             }
 
             if ($loop_scope->iteration_count === 0) {
                 foreach ($context->vars_in_scope as $var_id => $type) {
                     if (!isset($loop_scope->loop_parent_context->vars_in_scope[$var_id])) {
-                        if (isset($loop_scope->possibly_defined_loop_parent_vars[$var_id])) {
-                            $loop_scope->possibly_defined_loop_parent_vars[$var_id] = Type::combineUnionTypes(
-                                $type,
-                                $loop_scope->possibly_defined_loop_parent_vars[$var_id]
-                            );
-                        } else {
-                            $loop_scope->possibly_defined_loop_parent_vars[$var_id] = $type;
-                        }
+                        $loop_scope->possibly_defined_loop_parent_vars[$var_id] = Type::combineUnionTypes(
+                            $type,
+                            $loop_scope->possibly_defined_loop_parent_vars[$var_id] ?? null
+                        );
                     }
                 }
             }
@@ -68,13 +57,11 @@ class BreakAnalyzer
             if ($context->finally_scope) {
                 foreach ($context->vars_in_scope as $var_id => $type) {
                     if (isset($context->finally_scope->vars_in_scope[$var_id])) {
-                        if ($context->finally_scope->vars_in_scope[$var_id] !== $type) {
-                            $context->finally_scope->vars_in_scope[$var_id] = Type::combineUnionTypes(
-                                $context->finally_scope->vars_in_scope[$var_id],
-                                $type,
-                                $statements_analyzer->getCodebase()
-                            );
-                        }
+                        $context->finally_scope->vars_in_scope[$var_id] = Type::combineUnionTypes(
+                            $context->finally_scope->vars_in_scope[$var_id],
+                            $type,
+                            $statements_analyzer->getCodebase()
+                        );
                     } else {
                         $context->finally_scope->vars_in_scope[$var_id] = $type;
                         $type->possibly_undefined = true;
@@ -92,14 +79,10 @@ class BreakAnalyzer
                         $case_scope->break_vars = [];
                     }
 
-                    if (isset($case_scope->break_vars[$var_id])) {
-                        $case_scope->break_vars[$var_id] = Type::combineUnionTypes(
-                            $type,
-                            $case_scope->break_vars[$var_id]
-                        );
-                    } else {
-                        $case_scope->break_vars[$var_id] = $type;
-                    }
+                    $case_scope->break_vars[$var_id] = Type::combineUnionTypes(
+                        $type,
+                        $case_scope->break_vars[$var_id] ?? null
+                    );
                 }
             }
         }

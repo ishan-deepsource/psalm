@@ -498,8 +498,6 @@ class MissingReturnTypeTest extends FileManipulationTestCase
                     }',
                 '<?php
                     /**
-                     * @return iterable
-                     *
                      * @psalm-return iterable<mixed, int>
                      */
                     function foo(): iterable {
@@ -848,8 +846,6 @@ class MissingReturnTypeTest extends FileManipulationTestCase
                     }',
                 '<?php
                     /**
-                     * @return array
-                     *
                      * @psalm-return array<empty, empty>
                      */
                     function foo(): array {
@@ -1086,6 +1082,32 @@ class MissingReturnTypeTest extends FileManipulationTestCase
                 '5.6',
                 ['MissingReturnType'],
                 false,
+                true,
+            ],
+            'WithAttributes' => [
+                '<?php
+
+                    class A
+                    {
+                        #[Foo()]
+                        public function bar()
+                        {
+                        }
+                    }
+                    ',
+                '<?php
+
+                    class A
+                    {
+                        #[Foo()]
+                        public function bar(): void
+                        {
+                        }
+                    }
+                    ',
+                '7.1',
+                ['MissingReturnType'],
+                true,
                 true,
             ],
         ];

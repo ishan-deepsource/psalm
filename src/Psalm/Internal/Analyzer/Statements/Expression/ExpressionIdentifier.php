@@ -169,14 +169,15 @@ class ExpressionIdentifier
 
             if ($stmt->name instanceof PhpParser\Node\Identifier) {
                 return $object_id . '->' . $stmt->name;
-            } elseif ($source instanceof StatementsAnalyzer
-                && ($stmt_name_type = $source->node_data->getType($stmt->name))
-                && $stmt_name_type->isSingleStringLiteral()
-            ) {
-                return $object_id . '->' . $stmt_name_type->getSingleStringLiteral()->value;
-            } else {
-                return null;
             }
+
+            if ($source instanceof StatementsAnalyzer
+                && ($stmt_name_type = $source->node_data->getType($stmt->name))
+                && $stmt_name_type->isSingleStringLiteral()) {
+                return $object_id . '->' . $stmt_name_type->getSingleStringLiteral()->value;
+            }
+
+            return null;
         }
 
         if ($stmt instanceof PhpParser\Node\Expr\ClassConstFetch
@@ -196,7 +197,7 @@ class ExpressionIdentifier
 
         if ($stmt instanceof PhpParser\Node\Expr\MethodCall
             && $stmt->name instanceof PhpParser\Node\Identifier
-            && !$stmt->args
+            && !$stmt->getArgs()
         ) {
             $config = \Psalm\Config::getInstance();
 

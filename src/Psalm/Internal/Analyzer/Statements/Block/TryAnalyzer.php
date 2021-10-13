@@ -58,7 +58,7 @@ class TryAnalyzer
         $existing_thrown_exceptions = $context->possibly_thrown_exceptions;
 
         /**
-         * @var array<string, array<array-key, CodeLocation>>
+         * @var array<string, array<array-key, CodeLocation>> $context->possibly_thrown_exceptions
          */
         $context->possibly_thrown_exceptions = [];
 
@@ -89,17 +89,11 @@ class TryAnalyzer
 
         if ($try_context->finally_scope) {
             foreach ($context->vars_in_scope as $var_id => $type) {
-                if (isset($try_context->finally_scope->vars_in_scope[$var_id])) {
-                    if ($try_context->finally_scope->vars_in_scope[$var_id] !== $type) {
-                        $try_context->finally_scope->vars_in_scope[$var_id] = Type::combineUnionTypes(
-                            $try_context->finally_scope->vars_in_scope[$var_id],
-                            $type,
-                            $statements_analyzer->getCodebase()
-                        );
-                    }
-                } else {
-                    $try_context->finally_scope->vars_in_scope[$var_id] = $type;
-                }
+                $try_context->finally_scope->vars_in_scope[$var_id] = Type::combineUnionTypes(
+                    $try_context->finally_scope->vars_in_scope[$var_id] ?? null,
+                    $type,
+                    $statements_analyzer->getCodebase()
+                );
             }
         }
 
@@ -276,9 +270,6 @@ class TryAnalyzer
                     }
                 }
 
-                /**
-                 * @var array<string, array<array-key, CodeLocation>>
-                 */
                 $catch_context->possibly_thrown_exceptions = [];
             }
 
@@ -290,10 +281,7 @@ class TryAnalyzer
 
                 $catch_context->vars_in_scope[$catch_var_id] = new Union(
                     array_map(
-                        /**
-                         * @param string $fq_catch_class
-                         */
-                        function ($fq_catch_class) use ($codebase): \Psalm\Type\Atomic\TNamedObject {
+                        function (string $fq_catch_class) use ($codebase): \Psalm\Type\Atomic\TNamedObject {
                             $catch_class_type = new TNamedObject($fq_catch_class);
 
                             if (version_compare(PHP_VERSION, '7.0.0dev', '>=')

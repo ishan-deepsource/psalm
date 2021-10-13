@@ -1602,6 +1602,66 @@ class FunctionCallTest extends TestCase
                         foo($s);
                     }',
             ],
+            'preventObjectLeakingFromCallmapReference' => [
+                '<?php
+                    function one(): void
+                    {
+                        try {
+                            exec("", $output);
+                        } catch (Exception $e){
+                        }
+                    }
+
+                    function two(): array
+                    {
+                        exec("", $lines);
+                        return $lines;
+                    }',
+            ],
+            'array_is_list' => [
+                '<?php
+                    function getArray() : array {
+                        return [];
+                    }
+                    $s = getArray();
+                    assert(array_is_list($s));
+                    ',
+                'assertions' => [
+                    '$s' => 'list<mixed>',
+                ],
+                [],
+                '8.1',
+            ],
+            'array_is_list_on_empty_array' => [
+                '<?php
+                    $a = [];
+                    if(array_is_list($a)) {
+                        //$a is still empty array
+                    }
+                    ',
+                [],
+                [],
+                '8.1',
+            ],
+            'possiblyUndefinedArrayDestructurationOnOptionalArg' => [
+                '<?php
+                    class A
+                    {
+                    }
+
+                    function foo(A $a1, A $a2 = null): void
+                    {
+                    }
+
+                    $arguments = [new A()];
+                    if (mt_rand(1, 10) > 5) {
+                        // when this is done outside if - no errors
+                        $arguments[] = new A();
+                    }
+
+                    foo(...$arguments);
+                    ',
+            ],
         ];
     }
 

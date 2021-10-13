@@ -26,8 +26,8 @@ use Psalm\Storage\MethodStorage;
 use Psalm\Type;
 
 use function in_array;
+use function strpos;
 use function strtolower;
-use function substr;
 
 class MethodComparator
 {
@@ -35,6 +35,8 @@ class MethodComparator
      * @param  string[]         $suppressed_issues
      *
      * @return false|null
+     *
+     * @psalm-suppress PossiblyUnusedReturnValue unused but seems important
      */
     public static function compare(
         Codebase $codebase,
@@ -412,7 +414,7 @@ class MethodComparator
                 && $implementer_classlike_storage->user_defined
                 && $implementer_param->location
                 && $guide_method_storage->cased_name
-                && substr($guide_method_storage->cased_name, 0, 2) !== '__'
+                && strpos($guide_method_storage->cased_name, '__') !== 0
                 && $config->isInProjectDirs(
                     $implementer_param->location->file_path
                 )

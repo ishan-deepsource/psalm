@@ -52,6 +52,21 @@ class ArrayFillReturnTypeProvider implements \Psalm\Plugin\EventHandler\Function
         if ($second_arg_type
             && self::isPositiveNumericType($second_arg_type)
         ) {
+            if ($first_arg_type
+                && $first_arg_type->isSingleIntLiteral()
+                && $second_arg_type->isSingleIntLiteral()
+            ) {
+                return new Type\Union([
+                    new Type\Atomic\TNonEmptyArray([
+                        new Type\Union([new Type\Atomic\TIntRange(
+                            $first_arg_type->getSingleIntLiteral()->value,
+                            $second_arg_type->getSingleIntLiteral()->value
+                        )]),
+                        $value_type_from_third_arg,
+                    ])
+                ]);
+            }
+
             return new Type\Union([
                 new Type\Atomic\TNonEmptyArray([
                     Type::getInt(),
@@ -72,6 +87,14 @@ class ArrayFillReturnTypeProvider implements \Psalm\Plugin\EventHandler\Function
     {
         if ($arg->isSingle() && $arg->hasPositiveInt()) {
             return true;
+        }
+
+        if ($arg->isSingle()) {
+            foreach ($arg->getRangeInts() as $range_int) {
+                if ($range_int->isPositive()) {
+                    return true;
+                }
+            }
         }
 
         return $arg->isSingleIntLiteral() && $arg->getSingleIntLiteral()->value > 0;

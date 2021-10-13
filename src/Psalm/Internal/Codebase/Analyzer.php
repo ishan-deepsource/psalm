@@ -148,7 +148,7 @@ class Analyzer
      *
      * @var array<string>|null
      */
-    private $files_to_update = null;
+    private $files_to_update;
 
     /**
      * @var array<string, array<string, int>>
@@ -316,7 +316,7 @@ class Analyzer
 
             $project_analyzer->prepareMigration();
 
-            $files_to_update = $this->files_to_update !== null ? $this->files_to_update : $this->files_to_analyze;
+            $files_to_update = $this->files_to_update ?? $this->files_to_analyze;
 
             foreach ($files_to_update as $file_path) {
                 $this->updateFile($file_path, $project_analyzer->dry_run);
@@ -345,7 +345,7 @@ class Analyzer
 
                 $this->progress->debug('Analyzing ' . $file_analyzer->getFilePath() . "\n");
 
-                $file_analyzer->analyze(null);
+                $file_analyzer->analyze();
                 $file_analyzer->context = null;
                 $file_analyzer->clearSourceBeforeDestruction();
                 unset($file_analyzer);
@@ -572,17 +572,12 @@ class Analyzer
                         $this->possible_method_param_types[$declaring_method_id] = $possible_param_types;
                     } else {
                         foreach ($possible_param_types as $offset => $possible_param_type) {
-                            if (!isset($this->possible_method_param_types[$declaring_method_id][$offset])) {
-                                $this->possible_method_param_types[$declaring_method_id][$offset]
-                                    = $possible_param_type;
-                            } else {
-                                $this->possible_method_param_types[$declaring_method_id][$offset]
-                                    = \Psalm\Type::combineUnionTypes(
-                                        $this->possible_method_param_types[$declaring_method_id][$offset],
-                                        $possible_param_type,
-                                        $codebase
-                                    );
-                            }
+                            $this->possible_method_param_types[$declaring_method_id][$offset]
+                                = \Psalm\Type::combineUnionTypes(
+                                    $this->possible_method_param_types[$declaring_method_id][$offset] ?? null,
+                                    $possible_param_type,
+                                    $codebase
+                                );
                         }
                     }
                 }
@@ -1368,7 +1363,7 @@ class Analyzer
         $total_files = count($all_deep_scanned_files);
 
         $lines = [];
-        
+
         if (!$total_files) {
             $lines[] = 'No files analyzed';
         }
@@ -1380,7 +1375,7 @@ class Analyzer
             $lines[] = 'Psalm was able to infer types for ' . $percentage . '%'
                 . ' of the codebase';
         }
-        
+
         return implode("\n", $lines);
     }
 

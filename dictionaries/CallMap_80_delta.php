@@ -97,6 +97,10 @@ return [
       'old' => ['array<string,mixed>'],
       'new' => ['array<string,mixed>', 'filter='=>'?int'],
     ],
+    'ReflectionClass::getReflectionConstants' => [
+        'old' => ['list<ReflectionClassConstant>'],
+        'new' => ['list<ReflectionClassConstant>', 'filter='=>'?int'],
+    ],
     'XMLWriter::flush' => [
       'old' => ['string|int|false', 'empty='=>'bool'],
       'new' => ['string|int', 'empty='=>'bool'],
@@ -818,8 +822,8 @@ return [
       'new' => ['bool', 'to'=>'string', 'subject'=>'string', 'message'=>'string', 'additional_headers='=>'string|array', 'additional_params='=>'string|null'],
     ],
     'mb_str_split' => [
-      'old' => ['non-empty-list<string>|false', 'string'=>'string', 'length='=>'positive-int', 'encoding='=>'string'],
-      'new' => ['non-empty-list<string>', 'string'=>'string', 'length='=>'positive-int', 'encoding='=>'string|null'],
+      'old' => ['list<string>|false', 'string'=>'string', 'length='=>'positive-int', 'encoding='=>'string'],
+      'new' => ['list<string>', 'string'=>'string', 'length='=>'positive-int', 'encoding='=>'string|null'],
     ],
     'mb_strcut' => [
       'old' => ['string', 'string'=>'string', 'start'=>'int', 'length='=>'?int', 'encoding='=>'string'],

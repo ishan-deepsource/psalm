@@ -15,9 +15,6 @@ class ExplodeReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionRe
         return ['explode'];
     }
 
-    /**
-     * @param  list<PhpParser\Node\Arg>    $call_args
-     */
     public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
     {
         $statements_source = $event->getStatementsSource();
@@ -51,9 +48,10 @@ class ExplodeReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionRe
                         ? new Type\Atomic\TList($inner_type)
                         : new Type\Atomic\TNonEmptyList($inner_type)
                 ]);
-            } elseif (($first_arg_type = $statements_source->node_data->getType($call_args[0]->value))
-                && $first_arg_type->hasString()
-            ) {
+            }
+
+            if (($first_arg_type = $statements_source->node_data->getType($call_args[0]->value))
+                && $first_arg_type->hasString()) {
                 $can_be_false = true;
                 if ($first_arg_type->isString()) {
                     $can_be_false = false;

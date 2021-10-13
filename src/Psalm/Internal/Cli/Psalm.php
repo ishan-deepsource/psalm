@@ -10,6 +10,7 @@ use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\CliUtils;
 use Psalm\Internal\Composer;
 use Psalm\Internal\ErrorHandler;
+use Psalm\Internal\Fork\PsalmRestarter;
 use Psalm\Internal\IncludeCollector;
 use Psalm\Internal\Provider;
 use Psalm\IssueBuffer;
@@ -250,7 +251,7 @@ final class Psalm
             }
         }
 
-        $paths_to_check = CliUtils::getPathsToCheck(isset($options['f']) ? $options['f'] : null);
+        $paths_to_check = CliUtils::getPathsToCheck($options['f'] ?? null);
 
         if ($config->resolve_from_config_file) {
             $current_dir = $config->base_dir;
@@ -415,11 +416,8 @@ final class Psalm
     private static function validateCliArguments(array $args): void
     {
         array_map(
-            /**
-             * @param string $arg
-             */
-            function ($arg): void {
-                if (substr($arg, 0, 2) === '--' && $arg !== '--') {
+            function (string $arg): void {
+                if (strpos($arg, '--') === 0 && $arg !== '--') {
                     $arg_name = preg_replace('/=.*$/', '', substr($arg, 2));
 
                     if (!in_array($arg_name, self::LONG_OPTIONS)
@@ -433,7 +431,7 @@ final class Psalm
                         );
                         exit(1);
                     }
-                } elseif (substr($arg, 0, 1) === '-' && $arg !== '-' && $arg !== '--') {
+                } elseif (strpos($arg, '-') === 0 && $arg !== '-' && $arg !== '--') {
                     $arg_name = preg_replace('/=.*$/', '', substr($arg, 1));
 
                     if (!in_array($arg_name, self::SHORT_OPTIONS)
@@ -455,7 +453,7 @@ final class Psalm
     /**
      * @param array<string,string|false|list<mixed>> $options
      */
-    private static function setMemoryLimit($options): void
+    private static function setMemoryLimit(array $options): void
     {
         if (!array_key_exists('use-ini-defaults', $options)) {
             ini_set('display_errors', 'stderr');
@@ -902,7 +900,7 @@ final class Psalm
         // If Xdebug is enabled, restart without it
         $ini_handler->check();
 
-        if ($config->load_xdebug_stub === null && '' !== $ini_handler->getSkippedVersion()) {
+        if ($config->load_xdebug_stub === null && PsalmRestarter::getSkippedVersion() !== '') {
             $config->load_xdebug_stub = true;
         }
     }

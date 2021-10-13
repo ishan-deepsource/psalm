@@ -284,7 +284,7 @@ class ClassLikeDocblockParser
                 ),
                 'start_offset' => $offset,
                 'end_offset' => $offset + strlen($imported_type_entry),
-                'parts' => CommentAnalyzer::splitDocLine($imported_type_entry) ?: []
+                'parts' => CommentAnalyzer::splitDocLine($imported_type_entry)
             ];
         }
 
@@ -489,7 +489,7 @@ class ClassLikeDocblockParser
         array $specials,
         string $property_tag
     ) : void {
-        $magic_property_comments = isset($specials[$property_tag]) ? $specials[$property_tag] : [];
+        $magic_property_comments = $specials[$property_tag] ?? [];
 
         foreach ($magic_property_comments as $offset => $property) {
             $line_parts = CommentAnalyzer::splitDocLine($property);

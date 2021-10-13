@@ -44,7 +44,7 @@ class ElseIfAnalyzer
         Context $else_context,
         Context $outer_context,
         Codebase $codebase,
-        ?int $branch_point
+        int $branch_point
     ): ?bool {
         $pre_conditional_context = clone $else_context;
 
@@ -159,7 +159,7 @@ class ElseIfAnalyzer
             if (array_filter(
                 $entry_clauses,
                 function ($clause): bool {
-                    return !!$clause->possibilities;
+                    return (bool)$clause->possibilities;
                 }
             )) {
                 $omit_keys = array_reduce(

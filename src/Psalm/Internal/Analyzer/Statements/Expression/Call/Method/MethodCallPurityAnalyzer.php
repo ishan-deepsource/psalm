@@ -20,7 +20,7 @@ class MethodCallPurityAnalyzer
         Codebase $codebase,
         PhpParser\Node\Expr\MethodCall $stmt,
         ?string $lhs_var_id,
-        ?string $cased_method_id,
+        string $cased_method_id,
         MethodIdentifier $method_id,
         \Psalm\Storage\MethodStorage $method_storage,
         \Psalm\Storage\ClassLikeStorage $class_storage,
@@ -51,7 +51,7 @@ class MethodCallPurityAnalyzer
         ) {
             if (IssueBuffer::accepts(
                 new ImpureMethodCall(
-                    'Cannot call an possibly-mutating method '
+                    'Cannot call a possibly-mutating method '
                         . $cased_method_id . ' from a mutation-free context',
                     new CodeLocation($statements_analyzer, $stmt->name)
                 ),
@@ -66,7 +66,7 @@ class MethodCallPurityAnalyzer
         ) {
             if (IssueBuffer::accepts(
                 new ImpureMethodCall(
-                    'Cannot call an possibly-mutating method '
+                    'Cannot call a possibly-mutating method '
                         . $cased_method_id . ' from a mutation-free context',
                     new CodeLocation($statements_analyzer, $stmt->name)
                 ),

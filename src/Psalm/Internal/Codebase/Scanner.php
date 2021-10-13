@@ -5,6 +5,7 @@ use Psalm\Codebase;
 use Psalm\Config;
 use Psalm\Internal\Analyzer\IssueData;
 use Psalm\Internal\ErrorHandler;
+use Psalm\Internal\Provider\ClassLikeStorageProvider;
 use Psalm\Internal\Provider\FileProvider;
 use Psalm\Internal\Provider\FileReferenceProvider;
 use Psalm\Internal\Provider\FileStorageProvider;
@@ -360,8 +361,8 @@ class Scanner
                     $statements_provider = $codebase->statements_provider;
 
                     $codebase->scanner->isForked();
-                    $codebase->file_storage_provider->deleteAll();
-                    $codebase->classlike_storage_provider->deleteAll();
+                    FileStorageProvider::deleteAll();
+                    ClassLikeStorageProvider::deleteAll();
 
                     $statements_provider->resetDiffs();
 
@@ -675,10 +676,6 @@ class Scanner
 
         if ($fq_class_name === 'self') {
             return false;
-        }
-
-        if (isset($this->existing_classlikes_lc[$fq_class_name_lc])) {
-            throw new \InvalidArgumentException('Why are you asking about a builtin class?');
         }
 
         $composer_file_path = $this->config->getComposerFilePathForClassLike($fq_class_name);

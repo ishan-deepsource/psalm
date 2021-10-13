@@ -102,10 +102,8 @@ class Reconciler
 
             foreach ($new_type_parts as $new_type_part_parts) {
                 foreach ($new_type_part_parts as $new_type_part_part) {
-                    switch ($new_type_part_part[0]) {
-                        case '!':
-                            $has_negation = true;
-                            break;
+                    if ($new_type_part_part[0] === '!') {
+                        $has_negation = true;
                     }
 
                     $has_isset = $has_isset
@@ -210,17 +208,16 @@ class Reconciler
                         $negated
                     );
 
+                    /** @psalm-suppress TypeDoesNotContainType can be empty after removing above */
                     if (!$result_type_candidate->getAtomicTypes()) {
                         $result_type_candidate->addType(new TEmpty);
                     }
 
-                    $orred_type = $orred_type
-                        ? Type::combineUnionTypes(
-                            $result_type_candidate,
-                            $orred_type,
-                            $codebase
-                        )
-                        : $result_type_candidate;
+                    $orred_type = Type::combineUnionTypes(
+                        $result_type_candidate,
+                        $orred_type,
+                        $codebase
+                    );
                 }
 
                 $result_type = $orred_type;
@@ -235,8 +232,8 @@ class Reconciler
             }
 
             if (($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\TaintFlowGraph
-                    && (!$result_type->hasScalarType())
-                        || ($result_type->hasString() && !$result_type->hasLiteralString()))
+                    && (!$result_type->hasScalarType()
+                        || ($result_type->hasString() && !$result_type->hasLiteralString())))
                 || $statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
             ) {
                 if ($before_adjustment && $before_adjustment->parent_nodes) {
@@ -681,15 +678,11 @@ class Reconciler
                             }
                         }
 
-                        if (!$new_base_type) {
-                            $new_base_type = $new_base_type_candidate;
-                        } else {
-                            $new_base_type = Type::combineUnionTypes(
-                                $new_base_type,
-                                $new_base_type_candidate,
-                                $codebase
-                            );
-                        }
+                        $new_base_type = Type::combineUnionTypes(
+                            $new_base_type,
+                            $new_base_type_candidate,
+                            $codebase
+                        );
 
                         $existing_keys[$new_base_key] = $new_base_type;
                     }
@@ -780,15 +773,11 @@ class Reconciler
                             $class_property_type = Type::getMixed();
                         }
 
-                        if ($new_base_type instanceof Type\Union) {
-                            $new_base_type = Type::combineUnionTypes(
-                                $new_base_type,
-                                $class_property_type,
-                                $codebase
-                            );
-                        } else {
-                            $new_base_type = $class_property_type;
-                        }
+                        $new_base_type = Type::combineUnionTypes(
+                            $new_base_type,
+                            $class_property_type,
+                            $codebase
+                        );
 
                         $existing_keys[$new_base_key] = $new_base_type;
                     }
@@ -1104,6 +1093,7 @@ class Reconciler
             }
         }
 
+        /** @psalm-suppress TypeDoesNotContainType can be empty after removing above */
         if (!$key_type->getAtomicTypes()) {
             // this should ideally prompt some sort of error
             $key_type->addType(new Type\Atomic\TArrayKey());

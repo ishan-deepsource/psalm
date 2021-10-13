@@ -58,6 +58,7 @@ class TemplateStandinTypeReplacer
                 }
             }
 
+            /** @psalm-suppress RedundantCondition can be empty after removing above */
             if ($new_input_type->getAtomicTypes()) {
                 $input_type = $new_input_type;
             }
@@ -178,7 +179,7 @@ class TemplateStandinTypeReplacer
                     $template_result,
                     $codebase,
                     $statements_analyzer,
-                    $replace,
+                    true,
                     $add_lower_bound,
                     $bound_equality_classlike,
                     $depth,
@@ -598,7 +599,7 @@ class TemplateStandinTypeReplacer
                         $input_arg_offset,
                         $calling_class,
                         $calling_function,
-                        $replace,
+                        true,
                         $add_lower_bound,
                         $bound_equality_classlike,
                         $depth + 1
@@ -684,7 +685,7 @@ class TemplateStandinTypeReplacer
                 $input_arg_offset,
                 $calling_class,
                 $calling_function,
-                $replace,
+                true,
                 $add_lower_bound,
                 $bound_equality_classlike,
                 $depth + 1
@@ -1084,15 +1085,11 @@ class TemplateStandinTypeReplacer
 
             $had_invariant = $had_invariant ?: $template_bound->equality_bound_classlike !== null;
 
-            if ($current_type === null) {
-                $current_type = $template_bound->type;
-            } else {
-                $current_type = \Psalm\Type::combineUnionTypes(
-                    $current_type,
-                    $template_bound->type,
-                    $codebase
-                );
-            }
+            $current_type = \Psalm\Type::combineUnionTypes(
+                $current_type,
+                $template_bound->type,
+                $codebase
+            );
 
             $last_arg_offset = $template_bound->arg_offset;
         }
@@ -1177,25 +1174,17 @@ class TemplateStandinTypeReplacer
                                 \array_keys($input_class_storage->template_types)
                             );
 
-                            if (!isset($input_type_params[$old_params_offset])) {
-                                $candidate_param_type = \Psalm\Type::getMixed();
-                            } else {
-                                $candidate_param_type = $input_type_params[$old_params_offset];
-                            }
+                            $candidate_param_type = $input_type_params[$old_params_offset] ?? \Psalm\Type::getMixed();
                         } else {
                             $candidate_param_type = new Union([clone $et]);
                         }
 
                         $candidate_param_type->from_template_default = true;
 
-                        if (!$new_input_param) {
-                            $new_input_param = $candidate_param_type;
-                        } else {
-                            $new_input_param = \Psalm\Type::combineUnionTypes(
-                                $new_input_param,
-                                $candidate_param_type
-                            );
-                        }
+                        $new_input_param = \Psalm\Type::combineUnionTypes(
+                            $new_input_param,
+                            $candidate_param_type
+                        );
                     }
 
                     $new_input_param = clone $new_input_param;

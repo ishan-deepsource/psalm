@@ -139,7 +139,7 @@ class IfAnalyzer
                     $if_scope->reasonable_clauses = Context::filterClauses(
                         $var_id,
                         $if_scope->reasonable_clauses,
-                        isset($if_context->vars_in_scope[$var_id]) ? $if_context->vars_in_scope[$var_id] : null,
+                        $if_context->vars_in_scope[$var_id] ?? null,
                         $statements_analyzer
                     );
                 }
@@ -517,15 +517,11 @@ class IfAnalyzer
             }
 
             foreach ($possibly_redefined_vars as $var => $type) {
-                if (isset($if_scope->possibly_redefined_vars[$var])) {
-                    $if_scope->possibly_redefined_vars[$var] = Type::combineUnionTypes(
-                        $type,
-                        $if_scope->possibly_redefined_vars[$var],
-                        $codebase
-                    );
-                } else {
-                    $if_scope->possibly_redefined_vars[$var] = $type;
-                }
+                $if_scope->possibly_redefined_vars[$var] = Type::combineUnionTypes(
+                    $type,
+                    $if_scope->possibly_redefined_vars[$var] ?? null,
+                    $codebase
+                );
             }
         }
     }

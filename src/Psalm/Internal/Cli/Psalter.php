@@ -201,7 +201,7 @@ HELP;
         // If Xdebug is enabled, restart without it
         (new \Composer\XdebugHandler\XdebugHandler('PSALTER'))->check();
 
-        $paths_to_check = CliUtils::getPathsToCheck(isset($options['f']) ? $options['f'] : null);
+        $paths_to_check = CliUtils::getPathsToCheck($options['f'] ?? null);
 
         $path_to_config = CliUtils::getPathToConfig($options);
 
@@ -427,14 +427,11 @@ HELP;
     }
 
     /** @param array<int,string> $args */
-    private static function validateCliArguments($args): void
+    private static function validateCliArguments(array $args): void
     {
         array_map(
-            /**
-             * @param string $arg
-             */
-            function ($arg): void {
-                if (substr($arg, 0, 2) === '--' && $arg !== '--') {
+            function (string $arg): void {
+                if (strpos($arg, '--') === 0 && $arg !== '--') {
                     $arg_name = preg_replace('/=.*$/', '', substr($arg, 2));
 
                     if ($arg_name === 'alter') {

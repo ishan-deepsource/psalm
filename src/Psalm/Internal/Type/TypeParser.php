@@ -406,7 +406,7 @@ class TypeParser
 
                 return new Atomic\TTemplateParamClass(
                     $t->param_name,
-                    $t_atomic_type ? $t_atomic_type->value : 'object',
+                    $t_atomic_type->value ?? 'object',
                     $t_atomic_type,
                     $t->defining_class
                 );
@@ -435,6 +435,7 @@ class TypeParser
      */
     public static function getComputedIntsFromMask(array $potential_ints) : array
     {
+        /** @var list<int> */
         $potential_values = [];
 
         foreach ($potential_ints as $ith) {
@@ -443,8 +444,8 @@ class TypeParser
             $new_values[] = $ith;
 
             if ($ith !== 0) {
-                for ($j = 0; $j < count($potential_values); $j++) {
-                    $new_values[] = $ith | $potential_values[$j];
+                foreach ($potential_values as $potential_value) {
+                    $new_values[] = $ith | $potential_value;
                 }
             }
 
@@ -1182,7 +1183,7 @@ class TypeParser
         $array_defining_class = array_keys($template_type_map[$array_param_name])[0];
 
         if ($offset_defining_class !== $array_defining_class
-            && substr($offset_defining_class, 0, 3) !== 'fn-'
+            && strpos($offset_defining_class, 'fn-') !== 0
         ) {
             throw new TypeParseTreeException('Template params are defined in different locations');
         }

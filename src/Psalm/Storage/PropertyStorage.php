@@ -17,7 +17,7 @@ class PropertyStorage
     /**
      * @var ClassLikeAnalyzer::VISIBILITY_*
      */
-    public $visibility = 1;
+    public $visibility = ClassLikeAnalyzer::VISIBILITY_PUBLIC;
 
     /**
      * @var CodeLocation|null
@@ -84,7 +84,7 @@ class PropertyStorage
     /**
      * @var ?string
      */
-    public $getter_method = null;
+    public $getter_method;
 
     /**
      * @var bool

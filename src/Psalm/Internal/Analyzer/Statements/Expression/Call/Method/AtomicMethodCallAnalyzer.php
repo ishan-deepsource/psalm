@@ -126,7 +126,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
 
             ArgumentsAnalyzer::analyze(
                 $statements_analyzer,
-                $stmt->args,
+                $stmt->getArgs(),
                 null,
                 null,
                 true,
@@ -170,7 +170,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
 
             ArgumentsAnalyzer::analyze(
                 $statements_analyzer,
-                $stmt->args,
+                $stmt->getArgs(),
                 null,
                 null,
                 true,
@@ -185,7 +185,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
 
         $method_id = new MethodIdentifier($fq_class_name, $method_name_lc);
 
-        $args = $stmt->args;
+        $args = $stmt->getArgs();
 
         $naive_method_id = $method_id;
 
@@ -443,7 +443,6 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
             $result,
             $return_type_candidate,
             $all_intersection_return_type,
-            $method_name_lc,
             $codebase
         );
     }
@@ -471,7 +470,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
         foreach ($intersection_types as $intersection_type) {
             $intersection_result = clone $result;
 
-            /** @var ?Type\Union */
+            /** @var ?Type\Union $intersection_result->return_type */
             $intersection_result->return_type = null;
 
             self::analyze(
@@ -518,36 +517,19 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
 
     private static function updateResultReturnType(
         AtomicMethodCallAnalysisResult $result,
-        ?Type\Union $return_type_candidate,
+        Type\Union $return_type_candidate,
         ?Type\Union $all_intersection_return_type,
-        string $method_name,
         Codebase $codebase
     ) : void {
-        if ($return_type_candidate) {
-            if ($all_intersection_return_type) {
-                $return_type_candidate = Type::intersectUnionTypes(
-                    $all_intersection_return_type,
-                    $return_type_candidate,
-                    $codebase
-                ) ?: Type::getMixed();
-            }
-
-            if (!$result->return_type) {
-                $result->return_type = $return_type_candidate;
-            } else {
-                $result->return_type = Type::combineUnionTypes($return_type_candidate, $result->return_type);
-            }
-        } elseif ($all_intersection_return_type) {
-            if (!$result->return_type) {
-                $result->return_type = $all_intersection_return_type;
-            } else {
-                $result->return_type = Type::combineUnionTypes($all_intersection_return_type, $result->return_type);
-            }
-        } elseif ($method_name === '__tostring') {
-            $result->return_type = Type::getString();
-        } else {
-            $result->return_type = Type::getMixed();
+        if ($all_intersection_return_type) {
+            $return_type_candidate = Type::intersectUnionTypes(
+                $all_intersection_return_type,
+                $return_type_candidate,
+                $codebase
+            ) ?: Type::getMixed();
         }
+
+        $result->return_type = Type::combineUnionTypes($return_type_candidate, $result->return_type);
     }
 
     private static function handleInvalidClass(
@@ -645,7 +627,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
 
                 if (ArgumentsAnalyzer::analyze(
                     $statements_analyzer,
-                    $stmt->args,
+                    $stmt->getArgs(),
                     null,
                     null,
                     true,
@@ -678,7 +660,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
         PhpParser\Node\Expr\MethodCall $stmt,
         StatementsAnalyzer $statements_analyzer,
         string $fq_class_name
-    ) {
+    ): array {
         $naive_method_exists = false;
 
         if ($class_storage->templatedMixins
@@ -767,7 +749,7 @@ class AtomicMethodCallAnalyzer extends CallAnalyzer
         StatementsAnalyzer $statements_analyzer,
         string $fq_class_name,
         ?string $lhs_var_id
-    ) {
+    ): array {
         $naive_method_exists = false;
 
         foreach ($class_storage->namedMixins as $mixin) {

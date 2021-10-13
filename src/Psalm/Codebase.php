@@ -95,7 +95,7 @@ class Codebase
     /**
      * @var null|'always'|'auto'
      */
-    public $find_unused_code = null;
+    public $find_unused_code;
 
     /**
      * @var FileProvider
@@ -179,7 +179,7 @@ class Codebase
     /**
      * @var ?Internal\Codebase\TaintFlowGraph
      */
-    public $taint_flow_graph = null;
+    public $taint_flow_graph;
 
     /**
      * @var bool
@@ -614,7 +614,7 @@ class Codebase
 
     public function getStubbedConstantType(string $const_id): ?Type\Union
     {
-        return isset(self::$stubbed_constants[$const_id]) ? self::$stubbed_constants[$const_id] : null;
+        return self::$stubbed_constants[$const_id] ?? null;
     }
 
     /**
@@ -942,26 +942,21 @@ class Codebase
                 return null;
             }
 
-            $storage = $this->methods->getStorage($declaring_method_id);
-            return $storage;
+            return $this->methods->getStorage($declaring_method_id);
         }
 
         $function_id = strtolower(substr($symbol, 0, -2));
         $file_storage = $this->file_storage_provider->get($file_path);
 
         if (isset($file_storage->functions[$function_id])) {
-            $function_storage = $file_storage->functions[$function_id];
-
-            return $function_storage;
+            return $file_storage->functions[$function_id];
         }
 
         if (!$function_id) {
             return null;
         }
 
-        $function = $this->functions->getStorage(null, $function_id);
-
-        return $function;
+        return $this->functions->getStorage(null, $function_id);
     }
 
     /**
@@ -1166,13 +1161,10 @@ class Codebase
                     return null;
                 }
 
-                $function = $this->functions->getStorage(null, $function_id);
-                return $function->location;
+                return $this->functions->getStorage(null, $function_id)->location;
             }
 
-            $storage = $this->classlike_storage_provider->get($symbol);
-
-            return $storage->location;
+            return $this->classlike_storage_provider->get($symbol)->location;
         } catch (\UnexpectedValueException $e) {
             error_log($e->getMessage());
 
@@ -1407,7 +1399,7 @@ class Codebase
             if ($offset - $end_pos === 1) {
                 $candidate_gap = substr($file_contents, $end_pos, 1);
 
-                if ($candidate_gap == '[') {
+                if ($candidate_gap === '[') {
                     $gap = $candidate_gap;
                     $recent_type = $possible_type;
 
@@ -1474,11 +1466,11 @@ class Codebase
             }
             // First parameter to a function-like
             $function_storage = $this->getFunctionStorageForSymbol($file_path, $function . '()');
-            if (!$function_storage || !$function_storage->params) {
+            if (!$function_storage || !$function_storage->params || !isset($function_storage->params[$argument_num])) {
                 return null;
             }
-            $parameter = $function_storage->params[$argument_num];
-            return $parameter->type;
+
+            return $function_storage->params[$argument_num]->type;
         }
 
         return null;
@@ -1622,7 +1614,7 @@ class Codebase
             $insertion_text = Type::getStringFromFQCLN(
                 $fq_class_name,
                 $aliases && $aliases->namespace ? $aliases->namespace : null,
-                $aliases ? $aliases->uses_flipped : [],
+                $aliases->uses_flipped ?? [],
                 null
             );
 

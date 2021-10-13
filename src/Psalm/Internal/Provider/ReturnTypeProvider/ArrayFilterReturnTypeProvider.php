@@ -38,7 +38,7 @@ class ArrayFilterReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
             return Type::getMixed();
         }
 
-        $array_arg = isset($call_args[0]->value) ? $call_args[0]->value : null;
+        $array_arg = $call_args[0]->value ?? null;
 
         $first_arg_array = $array_arg
             && ($first_arg_type = $statements_source->node_data->getType($array_arg))
@@ -144,6 +144,7 @@ class ArrayFilterReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
                 $key_type->addType(new Type\Atomic\TInt);
             }
 
+            /** @psalm-suppress TypeDoesNotContainType can be empty after removing above */
             if (!$inner_type->getAtomicTypes()) {
                 return Type::getEmptyArray();
             }
@@ -245,14 +246,18 @@ class ArrayFilterReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
 
                         $cond_object_id = \spl_object_id($stmt->expr);
 
-                        $filter_clauses = \Psalm\Internal\Algebra\FormulaGenerator::getFormula(
-                            $cond_object_id,
-                            $cond_object_id,
-                            $stmt->expr,
-                            $context->self,
-                            $statements_source,
-                            $codebase
-                        );
+                        try {
+                            $filter_clauses = \Psalm\Internal\Algebra\FormulaGenerator::getFormula(
+                                $cond_object_id,
+                                $cond_object_id,
+                                $stmt->expr,
+                                $context->self,
+                                $statements_source,
+                                $codebase
+                            );
+                        } catch (\Psalm\Exception\ComplicatedExpressionException $e) {
+                            $filter_clauses = [];
+                        }
 
                         $assertions = \Psalm\Internal\Algebra::getTruthsFromFormula(
                             $filter_clauses,
@@ -292,6 +297,7 @@ class ArrayFilterReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
             ]);
         }
 
+        /** @psalm-suppress TypeDoesNotContainType can be empty after removing above */
         if (!$inner_type->getAtomicTypes()) {
             return Type::getEmptyArray();
         }

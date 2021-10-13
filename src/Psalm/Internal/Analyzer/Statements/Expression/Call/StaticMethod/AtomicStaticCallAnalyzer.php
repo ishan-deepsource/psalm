@@ -205,7 +205,7 @@ class AtomicStaticCallAnalyzer
 
             if (ArgumentsAnalyzer::analyze(
                 $statements_analyzer,
-                $stmt->args,
+                $stmt->getArgs(),
                 null,
                 null,
                 true,
@@ -233,6 +233,9 @@ class AtomicStaticCallAnalyzer
         }
     }
 
+    /**
+     * @psalm-suppress UnusedReturnValue not used but seems important
+     */
     private static function handleNamedCall(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\StaticCall $stmt,
@@ -263,7 +266,7 @@ class AtomicStaticCallAnalyzer
             );
         }
 
-        $args = $stmt->args;
+        $args = $stmt->getArgs();
 
         if ($intersection_types
             && !$codebase->methods->methodExists($method_id)
@@ -411,7 +414,7 @@ class AtomicStaticCallAnalyzer
                             $stmt->class->getAttributes()
                         ),
                         $stmt_name,
-                        $stmt->args,
+                        $stmt->getArgs(),
                         $stmt->getAttributes()
                     );
 
@@ -481,7 +484,7 @@ class AtomicStaticCallAnalyzer
                     if ($return_type_candidate) {
                         CallAnalyzer::checkMethodArgs(
                             $method_id,
-                            $stmt->args,
+                            $stmt->getArgs(),
                             null,
                             $context,
                             new CodeLocation($statements_analyzer->getSource(), $stmt),
@@ -585,7 +588,7 @@ class AtomicStaticCallAnalyzer
             if (!$context->check_methods) {
                 if (ArgumentsAnalyzer::analyze(
                     $statements_analyzer,
-                    $stmt->args,
+                    $stmt->getArgs(),
                     null,
                     null,
                     true,
@@ -609,7 +612,7 @@ class AtomicStaticCallAnalyzer
         if (!$does_method_exist) {
             if (ArgumentsAnalyzer::analyze(
                 $statements_analyzer,
-                $stmt->args,
+                $stmt->getArgs(),
                 null,
                 null,
                 true,
@@ -704,7 +707,7 @@ class AtomicStaticCallAnalyzer
                         $stmt->class->getAttributes()
                     ),
                     $stmt_name,
-                    $stmt->args,
+                    $stmt->getArgs(),
                     $stmt->getAttributes()
                 );
 
@@ -844,17 +847,13 @@ class AtomicStaticCallAnalyzer
 
             $stmt_type = $statements_analyzer->node_data->getType($stmt);
 
-            if (!$stmt_type) {
-                $statements_analyzer->node_data->setType($stmt, $return_type_candidate);
-            } else {
-                $statements_analyzer->node_data->setType(
-                    $stmt,
-                    Type::combineUnionTypes(
-                        $return_type_candidate,
-                        $stmt_type
-                    )
-                );
-            }
+            $statements_analyzer->node_data->setType(
+                $stmt,
+                Type::combineUnionTypes(
+                    $return_type_candidate,
+                    $stmt_type
+                )
+            );
         }
 
         return null;

@@ -3,7 +3,7 @@ namespace Psalm\Internal\Analyzer\Statements\Expression;
 
 use PhpParser;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
-use Psalm\Internal\Analyzer\Statements\Expression\BinaryOp\NonDivArithmeticOpAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\BinaryOp\ArithmeticOpAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Type\TypeCombiner;
 use Psalm\StatementsSource;
@@ -164,7 +164,7 @@ class SimpleTypeInferer
                 || $stmt instanceof PhpParser\Node\Expr\BinaryOp\BitwiseOr
                 || $stmt instanceof PhpParser\Node\Expr\BinaryOp\BitwiseAnd
             ) {
-                NonDivArithmeticOpAnalyzer::analyze(
+                ArithmeticOpAnalyzer::analyze(
                     $file_source instanceof StatementsSource ? $file_source : null,
                     $nodes,
                     $stmt->left,
@@ -189,13 +189,20 @@ class SimpleTypeInferer
         }
 
         if ($stmt instanceof PhpParser\Node\Expr\ConstFetch) {
-            if (strtolower($stmt->name->parts[0]) === 'false') {
+            $name = strtolower($stmt->name->parts[0]);
+            if ($name === 'false') {
                 return Type::getFalse();
-            } elseif (strtolower($stmt->name->parts[0]) === 'true') {
+            }
+
+            if ($name === 'true') {
                 return Type::getTrue();
-            } elseif (strtolower($stmt->name->parts[0]) === 'null') {
+            }
+
+            if ($name === 'null') {
                 return Type::getNull();
-            } elseif ($stmt->name->parts[0] === '__NAMESPACE__') {
+            }
+
+            if ($stmt->name->parts[0] === '__NAMESPACE__') {
                 return Type::getString($aliases->namespace);
             }
 
@@ -275,9 +282,7 @@ class SimpleTypeInferer
                         }
 
                         return null;
-                    } catch (\InvalidArgumentException $e) {
-                        return null;
-                    } catch (\Psalm\Exception\CircularReferenceException $e) {
+                    } catch (\InvalidArgumentException | \Psalm\Exception\CircularReferenceException $e) {
                         return null;
                     }
                 }
@@ -691,7 +696,9 @@ class SimpleTypeInferer
                 if ($unpacked_atomic_type->type_params[0]->hasString()) {
                     // string keys are not supported in unpacked arrays
                     return false;
-                } elseif ($unpacked_atomic_type->type_params[0]->hasInt()) {
+                }
+
+                if ($unpacked_atomic_type->type_params[0]->hasInt()) {
                     $array_creation_info->item_key_atomic_types[] = new Type\Atomic\TInt();
                 }
 

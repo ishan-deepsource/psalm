@@ -117,11 +117,17 @@ class ExpressionResolver
         if ($stmt instanceof PhpParser\Node\Expr\ConstFetch) {
             if (strtolower($stmt->name->parts[0]) === 'false') {
                 return new UnresolvedConstant\ScalarValue(false);
-            } elseif (strtolower($stmt->name->parts[0]) === 'true') {
+            }
+
+            if (strtolower($stmt->name->parts[0]) === 'true') {
                 return new UnresolvedConstant\ScalarValue(true);
-            } elseif (strtolower($stmt->name->parts[0]) === 'null') {
+            }
+
+            if (strtolower($stmt->name->parts[0]) === 'null') {
                 return new UnresolvedConstant\ScalarValue(null);
-            } elseif ($stmt->name->parts[0] === '__NAMESPACE__') {
+            }
+
+            if ($stmt->name->parts[0] === '__NAMESPACE__') {
                 return new UnresolvedConstant\ScalarValue($aliases->namespace);
             }
 
@@ -187,6 +193,42 @@ class ExpressionResolver
             || $stmt instanceof PhpParser\Node\Scalar\DNumber
         ) {
             return new UnresolvedConstant\ScalarValue($stmt->value);
+        }
+
+        if ($stmt instanceof PhpParser\Node\Expr\UnaryPlus) {
+            $right = self::getUnresolvedClassConstExpr(
+                $stmt->expr,
+                $aliases,
+                $fq_classlike_name,
+                $parent_fq_class_name
+            );
+
+            if (!$right) {
+                return null;
+            }
+
+            return new UnresolvedConstant\UnresolvedAdditionOp(
+                new UnresolvedConstant\ScalarValue(0),
+                $right
+            );
+        }
+
+        if ($stmt instanceof PhpParser\Node\Expr\UnaryMinus) {
+            $right = self::getUnresolvedClassConstExpr(
+                $stmt->expr,
+                $aliases,
+                $fq_classlike_name,
+                $parent_fq_class_name
+            );
+
+            if (!$right) {
+                return null;
+            }
+
+            return new UnresolvedConstant\UnresolvedSubtractionOp(
+                new UnresolvedConstant\ScalarValue(0),
+                $right
+            );
         }
 
         if ($stmt instanceof PhpParser\Node\Expr\Array_) {
@@ -311,11 +353,11 @@ class ExpressionResolver
         }
 
         if ($function->name->parts === ['function_exists']
-            && isset($function->args[0])
-            && $function->args[0]->value instanceof PhpParser\Node\Scalar\String_
-            && function_exists($function->args[0]->value->value)
+            && isset($function->getArgs()[0])
+            && $function->getArgs()[0]->value instanceof PhpParser\Node\Scalar\String_
+            && function_exists($function->getArgs()[0]->value->value)
         ) {
-            $reflection_function = new \ReflectionFunction($function->args[0]->value->value);
+            $reflection_function = new \ReflectionFunction($function->getArgs()[0]->value->value);
 
             if ($reflection_function->isInternal()) {
                 return true;
@@ -325,18 +367,18 @@ class ExpressionResolver
         }
 
         if ($function->name->parts === ['class_exists']
-            && isset($function->args[0])
+            && isset($function->getArgs()[0])
         ) {
             $string_value = null;
 
-            if ($function->args[0]->value instanceof PhpParser\Node\Scalar\String_) {
-                $string_value = $function->args[0]->value->value;
-            } elseif ($function->args[0]->value instanceof PhpParser\Node\Expr\ClassConstFetch
-                && $function->args[0]->value->class instanceof PhpParser\Node\Name
-                && $function->args[0]->value->name instanceof PhpParser\Node\Identifier
-                && strtolower($function->args[0]->value->name->name) === 'class'
+            if ($function->getArgs()[0]->value instanceof PhpParser\Node\Scalar\String_) {
+                $string_value = $function->getArgs()[0]->value->value;
+            } elseif ($function->getArgs()[0]->value instanceof PhpParser\Node\Expr\ClassConstFetch
+                && $function->getArgs()[0]->value->class instanceof PhpParser\Node\Name
+                && $function->getArgs()[0]->value->name instanceof PhpParser\Node\Identifier
+                && strtolower($function->getArgs()[0]->value->name->name) === 'class'
             ) {
-                $string_value = (string) $function->args[0]->value->class->getAttribute('resolvedName');
+                $string_value = (string) $function->getArgs()[0]->value->class->getAttribute('resolvedName');
             }
 
             if ($string_value && class_exists($string_value)) {
@@ -355,18 +397,18 @@ class ExpressionResolver
         }
 
         if ($function->name->parts === ['interface_exists']
-            && isset($function->args[0])
+            && isset($function->getArgs()[0])
         ) {
             $string_value = null;
 
-            if ($function->args[0]->value instanceof PhpParser\Node\Scalar\String_) {
-                $string_value = $function->args[0]->value->value;
-            } elseif ($function->args[0]->value instanceof PhpParser\Node\Expr\ClassConstFetch
-                && $function->args[0]->value->class instanceof PhpParser\Node\Name
-                && $function->args[0]->value->name instanceof PhpParser\Node\Identifier
-                && strtolower($function->args[0]->value->name->name) === 'class'
+            if ($function->getArgs()[0]->value instanceof PhpParser\Node\Scalar\String_) {
+                $string_value = $function->getArgs()[0]->value->value;
+            } elseif ($function->getArgs()[0]->value instanceof PhpParser\Node\Expr\ClassConstFetch
+                && $function->getArgs()[0]->value->class instanceof PhpParser\Node\Name
+                && $function->getArgs()[0]->value->name instanceof PhpParser\Node\Identifier
+                && strtolower($function->getArgs()[0]->value->name->name) === 'class'
             ) {
-                $string_value = (string) $function->args[0]->value->class->getAttribute('resolvedName');
+                $string_value = (string) $function->getArgs()[0]->value->class->getAttribute('resolvedName');
             }
 
             if ($string_value && interface_exists($string_value)) {

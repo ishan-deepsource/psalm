@@ -132,7 +132,7 @@ class UnusedAssignmentRemover
         $iter = 1;
 
         // Check if second token is just whitespace
-        if (is_array($token_list[$iter]) && strlen(trim($token_list[$iter][1])) === 0) {
+        if (is_array($token_list[$iter]) && trim($token_list[$iter][1]) === '') {
             $offset_count += strlen($token_list[1][1]);
             $iter++;
         }
@@ -146,7 +146,7 @@ class UnusedAssignmentRemover
         $iter++;
 
         // Remove any whitespace following assignment operator token (e.g "=", "+=")
-        if (is_array($token_list[$iter]) && strlen(trim($token_list[$iter][1])) === 0) {
+        if (is_array($token_list[$iter]) && trim($token_list[$iter][1]) === '') {
             $offset_count += strlen($token_list[$iter][1]);
             $iter++;
         }
@@ -156,7 +156,7 @@ class UnusedAssignmentRemover
             $offset_count += 1;
             $iter++;
             // Handle any whitespace after "&"
-            if (is_array($token_list[$iter]) && strlen(trim($token_list[$iter][1])) === 0) {
+            if (is_array($token_list[$iter]) && trim($token_list[$iter][1]) === '') {
                 $offset_count += strlen($token_list[$iter][1]);
             }
         }
@@ -215,14 +215,13 @@ class UnusedAssignmentRemover
                     || $rhs_exp instanceof PhpParser\Node\Expr\AssignOp
                     || $rhs_exp instanceof PhpParser\Node\Expr\AssignRef
                 ) {
-                    $rhs_removable = $this->checkRemovableChainAssignment($rhs_exp, $var_loc_map);
-                    return $rhs_removable;
+                    return $this->checkRemovableChainAssignment($rhs_exp, $var_loc_map);
                 }
             }
             return $curr_removable;
-        } else {
-            return false;
         }
+
+        return false;
     }
 
     /**
@@ -344,9 +343,9 @@ class UnusedAssignmentRemover
             $rhs_exp = $current_node->expr;
             $rhs_search_result = $this->findAssignExp($rhs_exp, $var_id, $var_start_loc, $search_level + 1);
             return [$rhs_search_result[0], $rhs_search_result[1]];
-        } else {
-            return [null, $search_level];
         }
+
+        return [null, $search_level];
     }
 
     public function checkIfVarRemoved(string $var_id, CodeLocation $var_loc): bool

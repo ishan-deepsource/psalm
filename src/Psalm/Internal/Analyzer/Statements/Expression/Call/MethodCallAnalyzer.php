@@ -8,6 +8,8 @@ use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\MethodIdentifier;
+use Psalm\Internal\Type\Comparator\UnionTypeComparator;
+use Psalm\Issue\IfThisIsMismatch;
 use Psalm\Issue\InvalidMethodCall;
 use Psalm\Issue\InvalidScope;
 use Psalm\Issue\NullReference;
@@ -101,7 +103,7 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
         if (!$context->check_classes) {
             if (ArgumentsAnalyzer::analyze(
                 $statements_analyzer,
-                $stmt->args,
+                $stmt->getArgs(),
                 null,
                 null,
                 true,
@@ -199,7 +201,7 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
                 $possible_new_class_types[] = $context->vars_in_scope[$lhs_var_id];
             }
         }
-        if (!$stmt->args && $lhs_var_id && $stmt->name instanceof PhpParser\Node\Identifier) {
+        if (!$stmt->getArgs() && $lhs_var_id && $stmt->name instanceof PhpParser\Node\Identifier) {
             if ($codebase->config->memoize_method_calls || $result->can_memoize) {
                 $method_var_id = $lhs_var_id . '->' . strtolower($stmt->name->name) . '()';
 
@@ -221,9 +223,6 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
             $class_type = array_reduce(
                 $possible_new_class_types,
                 function (?Type\Union $type_1, Type\Union $type_2) use ($codebase): Type\Union {
-                    if ($type_1 === null) {
-                        return $type_2;
-                    }
                     return Type::combineUnionTypes($type_1, $type_2, $codebase);
                 }
             );
@@ -335,7 +334,7 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
 
             if (IssueBuffer::accepts(
                 new TooManyArguments(
-                    'Too many arguments for method ' . $error_method_id . ' - saw ' . count($stmt->args),
+                    'Too many arguments for method ' . $error_method_id . ' - saw ' . count($stmt->getArgs()),
                     new CodeLocation($source, $stmt->name),
                     (string) $error_method_id
                 ),
@@ -350,7 +349,7 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
 
             if (IssueBuffer::accepts(
                 new TooFewArguments(
-                    'Too few arguments for method ' . $error_method_id . ' saw ' . count($stmt->args),
+                    'Too few arguments for method ' . $error_method_id . ' saw ' . count($stmt->getArgs()),
                     new CodeLocation($source, $stmt->name),
                     (string) $error_method_id
                 ),
@@ -391,7 +390,7 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
         if (!$result->existent_method_ids) {
             return self::checkMethodArgs(
                 null,
-                $stmt->args,
+                $stmt->getArgs(),
                 null,
                 $context,
                 new CodeLocation($statements_analyzer->getSource(), $stmt),
@@ -437,6 +436,24 @@ class MethodCallAnalyzer extends \Psalm\Internal\Analyzer\Statements\Expression\
             // TODO: When should a method have a storage?
             if ($codebase->methods->hasStorage($method_id)) {
                 $storage = $codebase->methods->getStorage($method_id);
+                if ($storage->if_this_is_type
+                    && !UnionTypeComparator::isContainedBy(
+                        $codebase,
+                        $class_type,
+                        $storage->if_this_is_type
+                    )
+                ) {
+                    if (IssueBuffer::accepts(
+                        new IfThisIsMismatch(
+                            'Class is not ' . (string) $storage->if_this_is_type
+                            . ' as required by psalm-if-this-is',
+                            new CodeLocation($source, $stmt->name)
+                        ),
+                        $statements_analyzer->getSuppressedIssues()
+                    )) {
+                        // keep going
+                    }
+                }
                 if ($storage->self_out_type) {
                     $self_out_type = $storage->self_out_type;
                     $context->vars_in_scope[$lhs_var_id] = $self_out_type;

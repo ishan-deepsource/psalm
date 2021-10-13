@@ -14,7 +14,7 @@ use Psalm\Type\Union;
 use function array_merge;
 use function array_shift;
 use function array_values;
-use function substr;
+use function strpos;
 
 class TemplateInferredTypeReplacer
 {
@@ -83,7 +83,7 @@ class TemplateInferredTypeReplacer
                 } elseif ($codebase) {
                     foreach ($inferred_lower_bounds as $template_type_map) {
                         foreach ($template_type_map as $template_class => $_) {
-                            if (substr($template_class, 0, 3) === 'fn-') {
+                            if (strpos($template_class, 'fn-') === 0) {
                                 continue;
                             }
 
@@ -353,10 +353,6 @@ class TemplateInferredTypeReplacer
                         $atomic_type->else_type,
                         $codebase
                     );
-                } elseif ($if_template_type && !$else_template_type) {
-                    $class_template_type = $if_template_type;
-                } elseif (!$if_template_type) {
-                    $class_template_type = $else_template_type;
                 } else {
                     $class_template_type = Type::combineUnionTypes(
                         $if_template_type,

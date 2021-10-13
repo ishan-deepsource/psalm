@@ -11,6 +11,7 @@ use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ArrayFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Codebase\Functions;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
 use Psalm\Internal\Codebase\TaintFlowGraph;
 use Psalm\Internal\DataFlow\TaintSink;
@@ -69,8 +70,7 @@ class ArgumentsAnalyzer
             : null;
 
         // if this modifies the array type based on further args
-        if ($method_id
-            && in_array($method_id, ['array_push', 'array_unshift'], true)
+        if (in_array($method_id, ['array_push', 'array_unshift'], true)
             && $function_params
             && isset($args[0])
             && isset($args[1])
@@ -79,7 +79,7 @@ class ArgumentsAnalyzer
                 $statements_analyzer,
                 $args,
                 $context,
-                $method_id === 'array_push'
+                $method_id
             ) === false
             ) {
                 return false;
@@ -88,7 +88,7 @@ class ArgumentsAnalyzer
             return null;
         }
 
-        if ($method_id && $method_id === 'array_splice' && $function_params && count($args) > 1) {
+        if ($method_id === 'array_splice' && $function_params && count($args) > 1) {
             if (ArrayFunctionArgumentsAnalyzer::handleSplice($statements_analyzer, $args, $context) === false) {
                 return false;
             }
@@ -132,7 +132,7 @@ class ArgumentsAnalyzer
 
             $by_ref_type = null;
 
-            if ($by_ref && $param) {
+            if ($by_ref) {
                 $by_ref_type = $param->type ? clone $param->type : Type::getMixed();
             }
 
@@ -407,15 +407,11 @@ class ArgumentsAnalyzer
                                 }
                             }
 
-                            if (!$newly_inferred_type) {
-                                $newly_inferred_type = $replaced_type_part->params[$closure_param_offset]->type;
-                            } else {
-                                $newly_inferred_type = Type::combineUnionTypes(
-                                    $newly_inferred_type,
-                                    $replaced_type_part->params[$closure_param_offset]->type,
-                                    $codebase
-                                );
-                            }
+                            $newly_inferred_type = Type::combineUnionTypes(
+                                $newly_inferred_type,
+                                $replaced_type_part->params[$closure_param_offset]->type,
+                                $codebase
+                            );
                         }
                     }
                 }
@@ -476,7 +472,7 @@ class ArgumentsAnalyzer
             if ($function_storage) {
                 $is_variadic = $function_storage->variadic;
             } elseif (is_string($method_id)) {
-                $is_variadic = $codebase->functions->isVariadic(
+                $is_variadic = Functions::isVariadic(
                     $codebase,
                     strtolower($method_id),
                     $statements_analyzer->getRootFilePath()
@@ -623,7 +619,7 @@ class ArgumentsAnalyzer
                             $function_params[$i],
                             $i,
                             $i,
-                            $function_storage ? $function_storage->allow_named_arg_calls : true,
+                            $function_storage->allow_named_arg_calls ?? true,
                             new VirtualArg(
                                 StubsGenerator::getExpressionFromType($default_type)
                             ),
@@ -631,7 +627,7 @@ class ArgumentsAnalyzer
                             $context,
                             $class_generic_params,
                             $template_result,
-                            $function_storage ? $function_storage->specialize_call : true,
+                            $function_storage->specialize_call ?? true,
                             $in_call_map
                         );
                     }
@@ -799,13 +795,13 @@ class ArgumentsAnalyzer
                     $function_param,
                     $argument_offset + $i,
                     $i,
-                    $function_storage ? $function_storage->allow_named_arg_calls : true,
+                    $function_storage->allow_named_arg_calls ?? true,
                     $arg,
                     $arg_value_type,
                     $context,
                     $class_generic_params,
                     $template_result,
-                    $function_storage ? $function_storage->specialize_call : true,
+                    $function_storage->specialize_call ?? true,
                     $in_call_map
                 ) === false) {
                     return false;
@@ -911,7 +907,7 @@ class ArgumentsAnalyzer
     private static function handlePossiblyMatchingByRefParam(
         StatementsAnalyzer $statements_analyzer,
         Codebase $codebase,
-        ?string $method_id,
+        string $method_id,
         ?string $cased_method_id,
         ?FunctionLikeParameter $last_param,
         array $function_params,
@@ -972,8 +968,12 @@ class ArgumentsAnalyzer
                     $function_param = $last_param;
                 }
 
-                $by_ref_type = $function_param->type;
-                $by_ref_out_type = $function_param->out_type;
+                if ($function_param->type) {
+                    $by_ref_type = clone $function_param->type;
+                }
+                if ($function_param->out_type) {
+                    $by_ref_out_type = clone $function_param->out_type;
+                }
 
                 if ($by_ref_type && $by_ref_type->isNullable()) {
                     $check_null_ref = false;
@@ -1367,12 +1367,12 @@ class ArgumentsAnalyzer
             $fleshed_out_param_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
                 $codebase,
                 $function_param->type,
-                $class_storage ? $class_storage->name : null,
-                $calling_class_storage ? $calling_class_storage->name : null,
+                $class_storage->name ?? null,
+                $calling_class_storage->name ?? null,
                 null,
                 true,
                 false,
-                $calling_class_storage ? $calling_class_storage->final : false
+                $calling_class_storage->final ?? false
             );
 
             TemplateStandinTypeReplacer::replace(

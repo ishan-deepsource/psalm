@@ -17,6 +17,7 @@ use Psalm\Type;
 use Psalm\Type\Atomic;
 use Psalm\Type\Atomic\TClassString;
 use Psalm\Type\Atomic\TInt;
+use Psalm\Type\Atomic\TIntRange;
 use Psalm\Type\Atomic\TMixed;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TString;
@@ -123,7 +124,8 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                 $negated,
                 $code_location,
                 $suppressed_issues,
-                $failed_reconciliation
+                $failed_reconciliation,
+                $inside_loop
             );
         }
 
@@ -145,7 +147,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
             return $simply_reconciled_type;
         }
 
-        if (substr($assertion, 0, 4) === 'isa-') {
+        if (strpos($assertion, 'isa-') === 0) {
             $should_return = false;
 
             $new_type = self::handleIsA(
@@ -162,7 +164,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
             if ($should_return) {
                 return $new_type;
             }
-        } elseif (substr($assertion, 0, 9) === 'getclass-') {
+        } elseif (strpos($assertion, 'getclass-') === 0) {
             $assertion = substr($assertion, 9);
             $new_type = Type::parseString($assertion, null, $template_type_map);
         } else {
@@ -276,6 +278,9 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
     }
 
     /**
+     * This method is called when SimpleAssertionReconciler was not enough. It receives the existing type, the assertion
+     * and also a new type created from the assertion string.
+     *
      * @param 0|1|2         $failed_reconciliation
      * @param   string[]    $suppressed_issues
      * @param   array<string, array<string, Type\Union>> $template_type_map
@@ -581,7 +586,13 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
     }
 
     /**
+     * This method receives two types. The goal is to use datas in the new type to reduce the existing_type to a more
+     * precise version. For example: new is `array<int>` old is `list<mixed>` so the result is `list<int>`
+     *
      * @param array<string, array<string, Type\Union>> $template_type_map
+     *
+     * @psalm-suppress ComplexMethod we'd probably want to extract specific handling blocks at the end and also allow
+     * early return once a specific case has been handled
      */
     private static function filterTypeWithAnother(
         Codebase $codebase,
@@ -734,6 +745,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                     continue;
                 }
 
+                //we filter both types of standard iterables
                 if (($new_type_part instanceof Type\Atomic\TGenericObject
                         || $new_type_part instanceof Type\Atomic\TArray
                         || $new_type_part instanceof Type\Atomic\TIterable)
@@ -789,6 +801,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                     }
                 }
 
+                //we filter the second part of a list with the second part of standard iterables
                 if (($new_type_part instanceof Type\Atomic\TArray
                         || $new_type_part instanceof Type\Atomic\TIterable)
                     && $existing_type_part instanceof Type\Atomic\TList
@@ -834,6 +847,82 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                         $matching_atomic_types[] = $existing_type_part;
                         $atomic_comparison_results->type_coerced = true;
                     }
+                }
+
+                //we filter each property of a Keyed Array with the second part of standard iterables
+                if (($new_type_part instanceof Type\Atomic\TArray
+                        || $new_type_part instanceof Type\Atomic\TIterable)
+                    && $existing_type_part instanceof Type\Atomic\TKeyedArray
+                ) {
+                    $has_any_param_match = false;
+
+                    $new_param = $new_type_part->type_params[1];
+                    foreach ($existing_type_part->properties as $property_key => $existing_param) {
+                        $has_param_match = true;
+
+                        $new_param = self::filterTypeWithAnother(
+                            $codebase,
+                            $existing_param,
+                            $new_param,
+                            $template_type_map,
+                            $has_param_match,
+                            $any_scalar_type_match_found
+                        );
+
+                        if ($template_type_map) {
+                            TemplateInferredTypeReplacer::replace(
+                                $new_param,
+                                new TemplateResult([], $template_type_map),
+                                $codebase
+                            );
+                        }
+
+                        if ($has_param_match
+                            && $existing_type_part->properties[$property_key]->getId() !== $new_param->getId()
+                        ) {
+                            $existing_type_part->properties[$property_key] = $new_param;
+
+                            if (!$has_local_match) {
+                                $has_any_param_match = true;
+                            }
+                        }
+                    }
+
+                    $existing_type->bustCache();
+
+                    if ($has_any_param_match) {
+                        $has_local_match = true;
+                        $matching_atomic_types[] = $existing_type_part;
+                        $atomic_comparison_results->type_coerced = true;
+                    }
+                }
+
+                //These partial match wouldn't have been handled by AtomicTypeComparator
+                $new_range = null;
+                if ($new_type_part instanceof Atomic\TIntRange && $existing_type_part instanceof Atomic\TPositiveInt) {
+                    $new_range = TIntRange::intersectIntRanges(
+                        TIntRange::convertToIntRange($existing_type_part),
+                        $new_type_part
+                    );
+                } elseif ($existing_type_part instanceof Atomic\TIntRange
+                    && $new_type_part instanceof Atomic\TPositiveInt
+                ) {
+                    $new_range = TIntRange::intersectIntRanges(
+                        $existing_type_part,
+                        TIntRange::convertToIntRange($new_type_part)
+                    );
+                } elseif ($new_type_part instanceof Atomic\TIntRange
+                    && $existing_type_part instanceof Atomic\TIntRange
+                ) {
+                    $new_range = TIntRange::intersectIntRanges(
+                        $existing_type_part,
+                        $new_type_part
+                    );
+                }
+
+                if ($new_range !== null) {
+                    $has_local_match = true;
+                    $matching_atomic_types[] = $new_range;
                 }
 
                 if ($atomic_comparison_results->type_coerced) {
@@ -973,7 +1062,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                     $did_remove_type = false;
 
                     foreach ($existing_var_atomic_types as $atomic_key => $_) {
-                        if (substr($atomic_key, 0, 6) === 'float(') {
+                        if (strpos($atomic_key, 'float(') === 0) {
                             $atomic_key = 'int(' . substr($atomic_key, 6);
                         }
                         if ($atomic_key !== $assertion) {
@@ -1045,7 +1134,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                         $existing_var_atomic_type->as = self::handleLiteralEquality(
                             $assertion,
                             $bracket_pos,
-                            $is_loose_equality,
+                            false,
                             $existing_var_atomic_type->as,
                             $old_var_type_string,
                             $var_id,
@@ -1181,7 +1270,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                     $did_remove_type = false;
 
                     foreach ($existing_var_atomic_types as $atomic_key => $_) {
-                        if (substr($atomic_key, 0, 4) === 'int(') {
+                        if (strpos($atomic_key, 'int(') === 0) {
                             $atomic_key = 'float(' . substr($atomic_key, 4);
                         }
                         if ($atomic_key !== $assertion) {
@@ -1210,7 +1299,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                 }
             }
         } elseif ($scalar_type === 'enum') {
-            list($fq_enum_name, $case_name) = explode('::', $value);
+            [$fq_enum_name, $case_name] = explode('::', $value);
 
             if ($existing_var_type->hasMixed()) {
                 if ($is_loose_equality) {
@@ -1267,7 +1356,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
         Codebase $codebase,
         Union $existing_var_type,
         string &$assertion,
-        array &$template_type_map,
+        array $template_type_map,
         ?CodeLocation $code_location,
         ?string $key,
         array $suppressed_issues,
@@ -1277,7 +1366,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
 
         $allow_string_comparison = false;
 
-        if (substr($assertion, 0, 7) === 'string-') {
+        if (strpos($assertion, 'string-') === 0) {
             $assertion = substr($assertion, 7);
             $allow_string_comparison = true;
         }
@@ -1305,7 +1394,9 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
 
         if ($existing_has_object && !$existing_has_string) {
             return Type::parseString($assertion, null, $template_type_map);
-        } elseif ($existing_has_string && !$existing_has_object) {
+        }
+
+        if ($existing_has_string && !$existing_has_object) {
             if (!$allow_string_comparison && $code_location) {
                 if (IssueBuffer::accepts(
                     new TypeDoesNotContainType(

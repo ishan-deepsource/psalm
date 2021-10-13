@@ -31,7 +31,7 @@ class DocblockParser
         // Strip off comments.
         $docblock = trim($docblock);
 
-        if (substr($docblock, 0, 3) === '/**') {
+        if (strpos($docblock, '/**') === 0) {
             $docblock = substr($docblock, 3);
         }
 
@@ -81,7 +81,7 @@ class DocblockParser
 
             if (preg_match('/^[ \t]*\*?\s*@([\w\-\\\:]+)[\t ]*(.*)$/sm', $line, $matches, PREG_OFFSET_CAPTURE)) {
                 /** @var array<int, array{string, int}> $matches */
-                [$_, $type_info, $data_info] = $matches;
+                [, $type_info, $data_info] = $matches;
 
                 [$type] = $type_info;
                 [$data, $data_offset] = $data_info;

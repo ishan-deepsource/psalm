@@ -283,6 +283,22 @@ class FunctionLikeDocblockScanner
             $storage->self_out_type = $out_type;
         }
 
+        if ($docblock_info->if_this_is
+            && $storage instanceof MethodStorage) {
+            $out_type = TypeParser::parseTokens(
+                TypeTokenizer::getFullyQualifiedTokens(
+                    $docblock_info->if_this_is['type'],
+                    $aliases,
+                    $function_template_types + $class_template_types,
+                    $type_aliases
+                ),
+                null,
+                $function_template_types + $class_template_types,
+                $type_aliases
+            );
+            $storage->if_this_is_type = $out_type;
+        }
+
         foreach ($docblock_info->taint_sink_params as $taint_sink_param) {
             $param_name = substr($taint_sink_param['name'], 1);
 
@@ -339,7 +355,7 @@ class FunctionLikeDocblockScanner
             }
         }
 
-        if ($docblock_info->return_type) {
+        if ($docblock_info->return_type !== null) {
             self::handleReturn(
                 $codebase,
                 $docblock_info,
@@ -617,7 +633,7 @@ class FunctionLikeDocblockScanner
             $param_name = $docblock_param['name'];
             $docblock_param_variadic = false;
 
-            if (substr($param_name, 0, 3) === '...') {
+            if (strpos($param_name, '...') === 0) {
                 $docblock_param_variadic = true;
                 $param_name = substr($param_name, 3);
             }
@@ -987,7 +1003,7 @@ class FunctionLikeDocblockScanner
 
                 if (isset($flow_parts[0]) && \strpos(trim($flow_parts[0]), 'proxy') === 0) {
                     $proxy_call = trim(substr($flow_parts[0], strlen('proxy')));
-                    list($fully_qualified_name, $source_param_string) = explode('(', $proxy_call, 2);
+                    [$fully_qualified_name, $source_param_string] = explode('(', $proxy_call, 2);
 
                     if (!empty($fully_qualified_name) && !empty($source_param_string)) {
                         $source_params = preg_split('/, ?/', substr($source_param_string, 0, -1)) ?: [];

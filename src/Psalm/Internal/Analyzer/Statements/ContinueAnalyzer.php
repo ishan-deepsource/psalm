@@ -17,10 +17,7 @@ class ContinueAnalyzer
         PhpParser\Node\Stmt\Continue_ $stmt,
         Context $context
     ): void {
-        $count = $stmt->num
-            && $stmt->num instanceof PhpParser\Node\Scalar\LNumber
-            ? $stmt->num->value
-            : 1;
+        $count = $stmt->num instanceof PhpParser\Node\Scalar\LNumber? $stmt->num->value : 1;
 
         $loop_scope = $context->loop_scope;
 
@@ -72,26 +69,20 @@ class ContinueAnalyzer
             }
 
             foreach ($redefined_vars as $var => $type) {
-                if (isset($loop_scope->possibly_redefined_loop_vars[$var])) {
-                    $loop_scope->possibly_redefined_loop_vars[$var] = Type::combineUnionTypes(
-                        $type,
-                        $loop_scope->possibly_redefined_loop_vars[$var]
-                    );
-                } else {
-                    $loop_scope->possibly_redefined_loop_vars[$var] = $type;
-                }
+                $loop_scope->possibly_redefined_loop_vars[$var] = Type::combineUnionTypes(
+                    $type,
+                    $loop_scope->possibly_redefined_loop_vars[$var] ?? null
+                );
             }
 
             if ($context->finally_scope) {
                 foreach ($context->vars_in_scope as $var_id => $type) {
                     if (isset($context->finally_scope->vars_in_scope[$var_id])) {
-                        if ($context->finally_scope->vars_in_scope[$var_id] !== $type) {
-                            $context->finally_scope->vars_in_scope[$var_id] = Type::combineUnionTypes(
-                                $context->finally_scope->vars_in_scope[$var_id],
-                                $type,
-                                $statements_analyzer->getCodebase()
-                            );
-                        }
+                        $context->finally_scope->vars_in_scope[$var_id] = Type::combineUnionTypes(
+                            $context->finally_scope->vars_in_scope[$var_id],
+                            $type,
+                            $statements_analyzer->getCodebase()
+                        );
                     } else {
                         $context->finally_scope->vars_in_scope[$var_id] = $type;
                         $type->possibly_undefined = true;

@@ -69,7 +69,7 @@ class FunctionCallReturnTypeFetcher
                                 $template_result->lower_bounds[$template_name] = [
                                     'fn-' . $function_id => [
                                         new TemplateBound(
-                                            Type::getInt(false, count($stmt->args))
+                                            Type::getInt(false, count($stmt->getArgs()))
                                         )
                                     ]
                                 ];
@@ -187,7 +187,7 @@ class FunctionCallReturnTypeFetcher
                 $stmt_type = self::getReturnTypeFromCallMapWithArgs(
                     $statements_analyzer,
                     $function_id,
-                    $stmt->args,
+                    $stmt->getArgs(),
                     $callmap_callable,
                     $context
                 );
@@ -216,13 +216,13 @@ class FunctionCallReturnTypeFetcher
             foreach ($function_storage->proxy_calls as $proxy_call) {
                 $fake_call_arguments = [];
                 foreach ($proxy_call['params'] as $i) {
-                    $fake_call_arguments[] = $stmt->args[$i];
+                    $fake_call_arguments[] = $stmt->getArgs()[$i];
                 }
 
                 $fake_call_factory = new BuilderFactory();
 
                 if (strpos($proxy_call['fqn'], '::') !== false) {
-                    list($fqcn, $method) = explode('::', $proxy_call['fqn']);
+                    [$fqcn, $method] = explode('::', $proxy_call['fqn']);
                     $fake_call = $fake_call_factory->staticCall($fqcn, $method, $fake_call_arguments);
                 } else {
                     $fake_call = $fake_call_factory->funcCall($proxy_call['fqn'], $fake_call_arguments);
@@ -325,12 +325,34 @@ class FunctionCallReturnTypeFetcher
                                     ]);
                                 }
 
-                                if ($atomic_types['array'] instanceof Type\Atomic\TKeyedArray
-                                    && $atomic_types['array']->isNonEmpty()
+                                if ($atomic_types['array'] instanceof Type\Atomic\TKeyedArray) {
+                                    $min = 0;
+                                    $max = 0;
+                                    foreach ($atomic_types['array']->properties as $property) {
+                                        if (!$property->possibly_undefined) {
+                                            $min++;
+                                        }
+                                        $max++;
+                                    }
+
+                                    if ($atomic_types['array']->sealed) {
+                                        //the KeyedArray is sealed, we can use the min and max
+                                        if ($min === $max) {
+                                            return new Type\Union([new Type\Atomic\TLiteralInt($max)]);
+                                        }
+
+                                        return new Type\Union([new Type\Atomic\TIntRange($min, $max)]);
+                                    }
+
+                                    //the type is not sealed, we can only use the min
+                                    return new Type\Union([new Type\Atomic\TIntRange($min, null)]);
+                                }
+
+                                if ($atomic_types['array'] instanceof Type\Atomic\TArray
+                                    && $atomic_types['array']->type_params[0]->isEmpty()
+                                    && $atomic_types['array']->type_params[1]->isEmpty()
                                 ) {
-                                    return new Type\Union([
-                                        new Type\Atomic\TLiteralInt(count($atomic_types['array']->properties))
-                                    ]);
+                                    return Type::getInt(false, 0);
                                 }
 
                                 return new Type\Union([
@@ -564,9 +586,9 @@ class FunctionCallReturnTypeFetcher
         ) {
             $removed_taints = $function_storage->removed_taints;
 
-            if ($function_id === 'preg_replace' && count($stmt->args) > 2) {
-                $first_stmt_type = $statements_analyzer->node_data->getType($stmt->args[0]->value);
-                $second_stmt_type = $statements_analyzer->node_data->getType($stmt->args[1]->value);
+            if ($function_id === 'preg_replace' && count($stmt->getArgs()) > 2) {
+                $first_stmt_type = $statements_analyzer->node_data->getType($stmt->getArgs()[0]->value);
+                $second_stmt_type = $statements_analyzer->node_data->getType($stmt->getArgs()[1]->value);
 
                 if ($first_stmt_type
                     && $second_stmt_type
@@ -605,7 +627,7 @@ class FunctionCallReturnTypeFetcher
                 $function_storage,
                 $statements_analyzer->data_flow_graph,
                 $function_id,
-                $stmt->args,
+                $stmt->getArgs(),
                 $node_location,
                 $function_call_node,
                 $removed_taints,
@@ -698,7 +720,7 @@ class FunctionCallReturnTypeFetcher
             $next = $pattern[$i + 1] ?? null;
 
             if ($current === '\\') {
-                if ($next == null
+                if ($next === null
                     || $next === 'x'
                     || $next === 'u'
                 ) {

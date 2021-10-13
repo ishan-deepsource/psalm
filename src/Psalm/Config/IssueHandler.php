@@ -45,6 +45,14 @@ class IssueHandler
         return $handler;
     }
 
+    public function setCustomLevels(array $customLevels, string $base_dir): void
+    {
+        /** @var array $customLevel */
+        foreach ($customLevels as $customLevel) {
+            $this->custom_levels[] = ErrorLevelFileFilter::loadFromArray($customLevel, $base_dir, true);
+        }
+    }
+
     public function setErrorLevel(string $error_level): void
     {
         if (!in_array($error_level, \Psalm\Config::$ERROR_LEVELS, true)) {
@@ -138,12 +146,7 @@ class IssueHandler
     {
         return array_filter(
             array_map(
-                /**
-                 * @param string $file_name
-                 *
-                 * @return string
-                 */
-                function ($file_name) {
+                function (string $file_name): string {
                     return substr($file_name, 0, -4);
                 },
                 scandir(dirname(__DIR__) . '/Issue', SCANDIR_SORT_NONE)

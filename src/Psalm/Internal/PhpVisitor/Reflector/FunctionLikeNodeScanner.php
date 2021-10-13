@@ -2,6 +2,10 @@
 namespace Psalm\Internal\PhpVisitor\Reflector;
 
 use PhpParser;
+use PhpParser\Node\Identifier;
+use PhpParser\Node\Name;
+use PhpParser\Node\NullableType;
+use PhpParser\Node\UnionType;
 use Psalm\Aliases;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
@@ -218,7 +222,7 @@ class FunctionLikeNodeScanner
             }
 
             $existing_params['$' . $param_storage->name] = $i;
-            $storage->addParam($param_storage, !!$param->type);
+            $storage->addParam($param_storage, (bool)$param->type);
 
             if (!$param_storage->is_optional && !$param_storage->is_variadic) {
                 $required_param_count = $i + 1;
@@ -292,7 +296,7 @@ class FunctionLikeNodeScanner
                             $cond_id,
                             $cond_id,
                             $function_stmt->cond,
-                            $this->classlike_storage ? $this->classlike_storage->name : null,
+                            $this->classlike_storage->name ?? null,
                             $this->file_scanner,
                             null
                         );
@@ -399,9 +403,13 @@ class FunctionLikeNodeScanner
 
         if ($parser_return_type) {
             $original_type = $parser_return_type;
+            if ($original_type instanceof PhpParser\Node\IntersectionType) {
+                throw new \UnexpectedValueException('Intersection types not yet supported');
+            }
+            /** @var Identifier|Name|NullableType|UnionType $original_type */
 
             $storage->return_type = TypeHintResolver::resolve(
-                $parser_return_type,
+                $original_type,
                 $this->codebase->scanner,
                 $this->file_storage,
                 $this->classlike_storage,
@@ -585,7 +593,7 @@ class FunctionLikeNodeScanner
                 $property_storage->type_location = $param_storage->type_location;
                 $property_storage->location = $param_storage->location;
                 $property_storage->stmt_location = new CodeLocation($this->file_scanner, $param);
-                $property_storage->has_default = $param->default ? true : false;
+                $property_storage->has_default = (bool)$param->default;
                 $param_storage->promoted_property = true;
                 $property_storage->is_promoted = true;
 
@@ -753,6 +761,11 @@ class FunctionLikeNodeScanner
         $param_typehint = $param->type;
 
         if ($param_typehint) {
+            if ($param_typehint instanceof PhpParser\Node\IntersectionType) {
+                throw new \UnexpectedValueException('Intersection types not yet supported');
+            }
+            /** @var Identifier|Name|NullableType|UnionType $param_typehint */
+
             $param_type = TypeHintResolver::resolve(
                 $param_typehint,
                 $this->codebase->scanner,
@@ -967,26 +980,26 @@ class FunctionLikeNodeScanner
                     $duplicate_method_storage->has_visitor_issues = true;
 
                     return false;
-                } else {
-                    // skip methods based on @since docblock tag
-                    $doc_comment = $stmt->getDocComment();
+                }
 
-                    if ($doc_comment) {
-                        $docblock_info = null;
-                        try {
-                            $docblock_info = FunctionLikeDocblockParser::parse($doc_comment);
-                        } catch (IncorrectDocblockException|DocblockParseException $e) {
-                        }
-                        if ($docblock_info) {
-                            if ($docblock_info->since_php_major_version && !$this->aliases->namespace) {
-                                if ($docblock_info->since_php_major_version > $this->codebase->php_major_version) {
-                                    return false;
-                                }
-                                if ($docblock_info->since_php_major_version === $this->codebase->php_major_version
-                                    && $docblock_info->since_php_minor_version > $this->codebase->php_minor_version
-                                ) {
-                                    return false;
-                                }
+                // skip methods based on @since docblock tag
+                $doc_comment = $stmt->getDocComment();
+
+                if ($doc_comment) {
+                    $docblock_info = null;
+                    try {
+                        $docblock_info = FunctionLikeDocblockParser::parse($doc_comment);
+                    } catch (IncorrectDocblockException|DocblockParseException $e) {
+                    }
+                    if ($docblock_info) {
+                        if ($docblock_info->since_php_major_version && !$this->aliases->namespace) {
+                            if ($docblock_info->since_php_major_version > $this->codebase->php_major_version) {
+                                return false;
+                            }
+                            if ($docblock_info->since_php_major_version === $this->codebase->php_major_version
+                                && $docblock_info->since_php_minor_version > $this->codebase->php_minor_version
+                            ) {
+                                return false;
                             }
                         }
                     }

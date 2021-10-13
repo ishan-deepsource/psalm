@@ -616,7 +616,7 @@ class InstancePropertyAssignmentAnalyzer
         Context $context,
         bool $direct_assignment,
         \Psalm\Codebase $codebase,
-        Type\Union &$assignment_value_type,
+        Type\Union $assignment_value_type,
         string $prop_name,
         ?string &$var_id
     ): array {
@@ -1330,14 +1330,10 @@ class InstancePropertyAssignmentAnalyzer
             if ($lhs_var_id === '$this'
                 && $source_analyzer instanceof ClassAnalyzer
             ) {
-                if (isset($source_analyzer->inferred_property_types[$prop_name])) {
-                    $source_analyzer->inferred_property_types[$prop_name] = Type::combineUnionTypes(
-                        $assignment_value_type,
-                        $source_analyzer->inferred_property_types[$prop_name]
-                    );
-                } else {
-                    $source_analyzer->inferred_property_types[$prop_name] = $assignment_value_type;
-                }
+                $source_analyzer->inferred_property_types[$prop_name] = Type::combineUnionTypes(
+                    $assignment_value_type,
+                    $source_analyzer->inferred_property_types[$prop_name] ?? null
+                );
             }
         }
 

@@ -21,6 +21,7 @@ use Psalm\Type\Atomic\TFalse;
 use Psalm\Type\Atomic\TFloat;
 use Psalm\Type\Atomic\TGenericObject;
 use Psalm\Type\Atomic\TInt;
+use Psalm\Type\Atomic\TIntRange;
 use Psalm\Type\Atomic\TIterable;
 use Psalm\Type\Atomic\TKeyedArray;
 use Psalm\Type\Atomic\TList;
@@ -526,18 +527,13 @@ class TypeCombiner
             }
 
             foreach ($type->type_params as $i => $type_param) {
-                if (isset($combination->array_type_params[$i])) {
-                    /** @psalm-suppress PropertyTypeCoercion */
-                    $combination->array_type_params[$i] = Type::combineUnionTypes(
-                        $combination->array_type_params[$i],
-                        $type_param,
-                        $codebase,
-                        $overwrite_empty_array
-                    );
-                } else {
-                    /** @psalm-suppress PropertyTypeCoercion */
-                    $combination->array_type_params[$i] = $type_param;
-                }
+                /** @psalm-suppress PropertyTypeCoercion */
+                $combination->array_type_params[$i] = Type::combineUnionTypes(
+                    $combination->array_type_params[$i] ?? null,
+                    $type_param,
+                    $codebase,
+                    $overwrite_empty_array
+                );
             }
 
             if ($type instanceof TNonEmptyArray) {
@@ -572,18 +568,13 @@ class TypeCombiner
 
         if ($type instanceof TList) {
             foreach ([Type::getInt(), $type->type_param] as $i => $type_param) {
-                if (isset($combination->array_type_params[$i])) {
-                    /** @psalm-suppress PropertyTypeCoercion */
-                    $combination->array_type_params[$i] = Type::combineUnionTypes(
-                        $combination->array_type_params[$i],
-                        $type_param,
-                        $codebase,
-                        $overwrite_empty_array
-                    );
-                } else {
-                    /** @psalm-suppress PropertyTypeCoercion */
-                    $combination->array_type_params[$i] = $type_param;
-                }
+                /** @psalm-suppress PropertyTypeCoercion */
+                $combination->array_type_params[$i] = Type::combineUnionTypes(
+                    $combination->array_type_params[$i] ?? null,
+                    $type_param,
+                    $codebase,
+                    $overwrite_empty_array
+                );
             }
 
             if ($type instanceof TNonEmptyList) {
@@ -612,18 +603,13 @@ class TypeCombiner
 
         if ($type instanceof Atomic\TClassStringMap) {
             foreach ([$type->getStandinKeyParam(), $type->value_param] as $i => $type_param) {
-                if (isset($combination->array_type_params[$i])) {
-                    /** @psalm-suppress PropertyTypeCoercion */
-                    $combination->array_type_params[$i] = Type::combineUnionTypes(
-                        $combination->array_type_params[$i],
-                        $type_param,
-                        $codebase,
-                        $overwrite_empty_array
-                    );
-                } else {
-                    /** @psalm-suppress PropertyTypeCoercion */
-                    $combination->array_type_params[$i] = $type_param;
-                }
+                /** @psalm-suppress PropertyTypeCoercion */
+                $combination->array_type_params[$i] = Type::combineUnionTypes(
+                    $combination->array_type_params[$i] ?? null,
+                    $type_param,
+                    $codebase,
+                    $overwrite_empty_array
+                );
             }
 
             $combination->array_always_filled = false;
@@ -642,18 +628,13 @@ class TypeCombiner
             || ($type instanceof TArray && $type_key === 'iterable')
         ) {
             foreach ($type->type_params as $i => $type_param) {
-                if (isset($combination->builtin_type_params[$type_key][$i])) {
-                    /** @psalm-suppress PropertyTypeCoercion */
-                    $combination->builtin_type_params[$type_key][$i] = Type::combineUnionTypes(
-                        $combination->builtin_type_params[$type_key][$i],
-                        $type_param,
-                        $codebase,
-                        $overwrite_empty_array
-                    );
-                } else {
-                    /** @psalm-suppress PropertyTypeCoercion */
-                    $combination->builtin_type_params[$type_key][$i] = $type_param;
-                }
+                /** @psalm-suppress PropertyTypeCoercion */
+                $combination->builtin_type_params[$type_key][$i] = Type::combineUnionTypes(
+                    $combination->builtin_type_params[$type_key][$i] ?? null,
+                    $type_param,
+                    $codebase,
+                    $overwrite_empty_array
+                );
             }
 
             return null;
@@ -661,18 +642,13 @@ class TypeCombiner
 
         if ($type instanceof TGenericObject) {
             foreach ($type->type_params as $i => $type_param) {
-                if (isset($combination->object_type_params[$type_key][$i])) {
-                    /** @psalm-suppress PropertyTypeCoercion */
-                    $combination->object_type_params[$type_key][$i] = Type::combineUnionTypes(
-                        $combination->object_type_params[$type_key][$i],
-                        $type_param,
-                        $codebase,
-                        $overwrite_empty_array
-                    );
-                } else {
-                    /** @psalm-suppress PropertyTypeCoercion */
-                    $combination->object_type_params[$type_key][$i] = $type_param;
-                }
+                /** @psalm-suppress PropertyTypeCoercion */
+                $combination->object_type_params[$type_key][$i] = Type::combineUnionTypes(
+                    $combination->object_type_params[$type_key][$i] ?? null,
+                    $type_param,
+                    $codebase,
+                    $overwrite_empty_array
+                );
             }
 
             return null;
@@ -688,37 +664,27 @@ class TypeCombiner
             $combination->objectlike_sealed = $combination->objectlike_sealed && $type->sealed;
 
             if ($type->previous_value_type) {
-                if (!$combination->objectlike_value_type) {
-                    $combination->objectlike_value_type = $type->previous_value_type;
-                } else {
-                    $combination->objectlike_value_type = Type::combineUnionTypes(
-                        $type->previous_value_type,
-                        $combination->objectlike_value_type,
-                        $codebase,
-                        $overwrite_empty_array
-                    );
-                }
+                $combination->objectlike_value_type = Type::combineUnionTypes(
+                    $type->previous_value_type,
+                    $combination->objectlike_value_type,
+                    $codebase,
+                    $overwrite_empty_array
+                );
             }
 
             if ($type->previous_key_type) {
-                if (!$combination->objectlike_key_type) {
-                    $combination->objectlike_key_type = $type->previous_key_type;
-                } else {
-                    $combination->objectlike_key_type = Type::combineUnionTypes(
-                        $type->previous_key_type,
-                        $combination->objectlike_key_type,
-                        $codebase,
-                        $overwrite_empty_array
-                    );
-                }
+                $combination->objectlike_key_type = Type::combineUnionTypes(
+                    $type->previous_key_type,
+                    $combination->objectlike_key_type,
+                    $codebase,
+                    $overwrite_empty_array
+                );
             }
 
             $has_defined_keys = false;
 
             foreach ($type->properties as $candidate_property_name => $candidate_property_type) {
-                $value_type = isset($combination->objectlike_entries[$candidate_property_name])
-                    ? $combination->objectlike_entries[$candidate_property_name]
-                    : null;
+                $value_type = $combination->objectlike_entries[$candidate_property_name] ?? null;
 
                 if (!$value_type) {
                     $combination->objectlike_entries[$candidate_property_name] = clone $candidate_property_type;
@@ -1199,6 +1165,24 @@ class TypeCombiner
                     }
                 );
 
+                if (isset($combination->value_types['int'])) {
+                    $current_int_type = $combination->value_types['int'];
+                    if ($current_int_type instanceof TIntRange) {
+                        foreach ($combination->ints as $int) {
+                            if (!$current_int_type->contains($int->value)) {
+                                $current_int_type->min_bound = TIntRange::getNewLowestBound(
+                                    $current_int_type->min_bound,
+                                    $int->value
+                                );
+                                $current_int_type->max_bound = TIntRange::getNewHighestBound(
+                                    $current_int_type->max_bound,
+                                    $int->value
+                                );
+                            }
+                        }
+                    }
+                }
+
                 $combination->ints = null;
 
                 if (!isset($combination->value_types['int'])) {
@@ -1236,9 +1220,34 @@ class TypeCombiner
                     $combination->value_types['int'] = $type;
                 } elseif (isset($combination->value_types['int'])
                     && get_class($combination->value_types['int'])
-                        !== get_class($type)
+                    !== get_class($type)
                 ) {
                     $combination->value_types['int'] = new TInt();
+                }
+            } elseif ($type instanceof TIntRange) {
+                if ($combination->ints) {
+                    foreach ($combination->ints as $int) {
+                        if (!$type->contains($int->value)) {
+                            $type->min_bound = TIntRange::getNewLowestBound($type->min_bound, $int->value);
+                            $type->max_bound = TIntRange::getNewHighestBound($type->max_bound, $int->value);
+                        }
+                    }
+
+                    $combination->value_types['int'] = $type;
+                } elseif (!isset($combination->value_types['int'])) {
+                    $combination->value_types['int'] = $type;
+                } else {
+                    $old_type = $combination->value_types['int'];
+                    if ($old_type instanceof TIntRange) {
+                        $type->min_bound = TIntRange::getNewLowestBound($old_type->min_bound, $type->min_bound);
+                        $type->max_bound = TIntRange::getNewHighestBound($old_type->max_bound, $type->max_bound);
+                    } elseif ($old_type instanceof TPositiveInt) {
+                        $type->min_bound = TIntRange::getNewLowestBound($type->min_bound, 0);
+                        $type->max_bound = null;
+                    } else {
+                        $type = new TInt();
+                    }
+                    $combination->value_types['int'] = $type;
                 }
             } else {
                 $combination->value_types['int'] = $type;
@@ -1435,20 +1444,16 @@ class TypeCombiner
             $objectlike_keys = [];
 
             foreach ($combination->objectlike_entries as $property_name => $property_type) {
-                if ($objectlike_generic_type) {
-                    $objectlike_generic_type = Type::combineUnionTypes(
-                        $property_type,
-                        $objectlike_generic_type,
-                        $codebase,
-                        $overwrite_empty_array
-                    );
-                } else {
-                    $objectlike_generic_type = clone $property_type;
-                }
+                $objectlike_generic_type = Type::combineUnionTypes(
+                    clone $property_type,
+                    $objectlike_generic_type,
+                    $codebase,
+                    $overwrite_empty_array
+                );
 
                 if (is_int($property_name)) {
                     $objectlike_keys[$property_name] = new TLiteralInt($property_name);
-                } elseif (isset($type->class_strings[$property_name])) {
+                } elseif ($type instanceof TKeyedArray && isset($type->class_strings[$property_name])) {
                     $objectlike_keys[$property_name] = new TLiteralClassString($property_name);
                 } else {
                     $objectlike_keys[$property_name] = new TLiteralString($property_name);
@@ -1468,14 +1473,12 @@ class TypeCombiner
 
             $objectlike_key_type = new Type\Union(array_values($objectlike_keys));
 
-            if ($combination->objectlike_key_type) {
-                $objectlike_key_type = Type::combineUnionTypes(
-                    $combination->objectlike_key_type,
-                    $objectlike_key_type,
-                    $codebase,
-                    $overwrite_empty_array
-                );
-            }
+            $objectlike_key_type = Type::combineUnionTypes(
+                $combination->objectlike_key_type,
+                $objectlike_key_type,
+                $codebase,
+                $overwrite_empty_array
+            );
 
             $generic_type_params[0] = Type::combineUnionTypes(
                 $generic_type_params[0],

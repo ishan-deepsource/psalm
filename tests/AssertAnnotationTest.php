@@ -225,7 +225,7 @@ class AssertAnnotationTest extends TestCase
                      * @throws \Exception
                      */
                     function assertIsLongString($data): void {
-                        if (!is_string($data)) {
+                        if (!\is_string($data)) {
                             throw new \Exception;
                         }
                         if (strlen($data) < 100) {
@@ -1241,7 +1241,7 @@ class AssertAnnotationTest extends TestCase
                         return substr($a, 0, 1) . substr($b, 0, 1);
                     }'
             ],
-            'convertConstStringType' => [
+            'SKIPPED-convertConstStringType' => [
                 '<?php
                     class A {
                         const T1 = 1;

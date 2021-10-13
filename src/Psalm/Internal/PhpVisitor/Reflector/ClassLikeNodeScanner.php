@@ -2,6 +2,10 @@
 namespace Psalm\Internal\PhpVisitor\Reflector;
 
 use PhpParser;
+use PhpParser\Node\Identifier;
+use PhpParser\Node\Name;
+use PhpParser\Node\NullableType;
+use PhpParser\Node\UnionType;
 use Psalm\Aliases;
 use Psalm\CodeLocation;
 use Psalm\CodeLocation\DocblockTypeLocation;
@@ -366,12 +370,7 @@ class ClassLikeNodeScanner
                 if ($type_aliases) {
                     $this->classlike_type_aliases = $type_aliases;
                 }
-            } catch (DocblockParseException $e) {
-                $storage->docblock_issues[] = new InvalidDocblock(
-                    $e->getMessage(),
-                    new CodeLocation($this->file_scanner, $node, null, true)
-                );
-            } catch (TypeParseTreeException $e) {
+            } catch (DocblockParseException | TypeParseTreeException $e) {
                 $storage->docblock_issues[] = new InvalidDocblock(
                     $e->getMessage(),
                     new CodeLocation($this->file_scanner, $node, null, true)
@@ -1370,9 +1369,13 @@ class ClassLikeNodeScanner
 
         if ($stmt->type) {
             $parser_property_type = $stmt->type;
+            if ($parser_property_type instanceof PhpParser\Node\IntersectionType) {
+                throw new \UnexpectedValueException('Intersection types not yet supported');
+            }
+            /** @var Identifier|Name|NullableType|UnionType $parser_property_type */
 
             $signature_type = TypeHintResolver::resolve(
-                $stmt->type,
+                $parser_property_type,
                 $this->codebase->scanner,
                 $this->file_storage,
                 $this->storage,
@@ -1390,7 +1393,7 @@ class ClassLikeNodeScanner
             );
         }
 
-        $doc_var_group_type = $var_comment ? $var_comment->type : null;
+        $doc_var_group_type = $var_comment->type ?? null;
 
         if ($doc_var_group_type) {
             $doc_var_group_type->queueClassLikesForScanning($this->codebase, $this->file_storage);
@@ -1408,7 +1411,7 @@ class ClassLikeNodeScanner
             $property_storage->type_location = $signature_type_location;
             $property_storage->location = new CodeLocation($this->file_scanner, $property->name);
             $property_storage->stmt_location = new CodeLocation($this->file_scanner, $stmt);
-            $property_storage->has_default = $property->default ? true : false;
+            $property_storage->has_default = (bool)$property->default;
             $property_storage->deprecated = $var_comment ? $var_comment->deprecated : false;
             $property_storage->suppressed_issues = $var_comment ? $var_comment->suppressed_issues : [];
             $property_storage->internal = $var_comment ? $var_comment->psalm_internal ?? '' : '';

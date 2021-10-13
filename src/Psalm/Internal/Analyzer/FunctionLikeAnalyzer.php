@@ -134,6 +134,8 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
      * @param bool          $add_mutations  whether or not to add mutations to this method
      *
      * @return false|null
+     *
+     * @psalm-suppress PossiblyUnusedReturnValue unused but seems important
      */
     public function analyze(
         Context $context,
@@ -1624,16 +1626,6 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         return [];
     }
 
-    public function getFQCLN(): ?string
-    {
-        return $this->source->getFQCLN();
-    }
-
-    public function getClassName(): ?string
-    {
-        return $this->source->getClassName();
-    }
-
     /**
      * @return array<string, array<string, Type\Union>>|null
      */
@@ -1645,16 +1637,6 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         }
 
         return $this->storage->template_types;
-    }
-
-    public function getParentFQCLN(): ?string
-    {
-        return $this->source->getParentFQCLN();
-    }
-
-    public function getNodeTypeProvider() : \Psalm\NodeTypeProvider
-    {
-        return $this->source->getNodeTypeProvider();
     }
 
     public function isStatic(): bool

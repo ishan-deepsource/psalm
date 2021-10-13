@@ -40,9 +40,16 @@ use function array_filter;
 use function count;
 use function explode;
 use function get_class;
+use function max;
+use function min;
 use function strpos;
 use function substr;
 
+/**
+ * This class receives a known type and an assertion (probably coming from AssertionFinder). The goal is to refine
+ * the known type using the assertion. For example: old type is `int` assertion is `>5` result is `int<6, max>`.
+ * Complex reconciliation takes part in AssertionReconciler if this class couldn't handle the reconciliation
+ */
 class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
 {
     /**
@@ -85,7 +92,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return $existing_var_type;
         }
 
-        if (substr($assertion, 0, 9) === 'in-array-') {
+        if (strpos($assertion, 'in-array-') === 0) {
             return self::reconcileInArray(
                 $codebase,
                 $existing_var_type,
@@ -98,10 +105,26 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             );
         }
 
-        if (substr($assertion, 0, 14) === 'has-array-key-') {
+        if (strpos($assertion, 'has-array-key-') === 0) {
             return self::reconcileHasArrayKey(
                 $existing_var_type,
                 substr($assertion, 14)
+            );
+        }
+
+        if ($assertion[0] === '>') {
+            return self::reconcileSuperiorTo(
+                $existing_var_type,
+                substr($assertion, 1),
+                $inside_loop
+            );
+        }
+
+        if ($assertion[0] === '<') {
+            return self::reconcileInferiorTo(
+                $existing_var_type,
+                substr($assertion, 1),
+                $inside_loop
             );
         }
 
@@ -338,6 +361,10 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return Type::getFloat();
         }
 
+        if ($assertion === 'float' && $is_equality && !$is_strict_equality && $existing_var_type->isString()) {
+            return Type::getNumericString();
+        }
+
         if ($assertion === 'non-empty-countable') {
             return self::reconcileNonEmptyCountable(
                 $existing_var_type,
@@ -351,7 +378,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             );
         }
 
-        if (substr($assertion, 0, 13) === 'has-at-least-') {
+        if (strpos($assertion, 'has-at-least-') === 0) {
             return self::reconcileNonEmptyCountable(
                 $existing_var_type,
                 $key,
@@ -364,7 +391,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             );
         }
 
-        if (substr($assertion, 0, 12) === 'has-exactly-') {
+        if (strpos($assertion, 'has-exactly-') === 0) {
             /** @psalm-suppress ArgumentTypeCoercion */
             return self::reconcileExactlyCountable(
                 $existing_var_type,
@@ -372,7 +399,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             );
         }
 
-        if (substr($assertion, 0, 10) === 'hasmethod-') {
+        if (strpos($assertion, 'hasmethod-') === 0) {
             return self::reconcileHasMethod(
                 $codebase,
                 substr($assertion, 10),
@@ -622,6 +649,14 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                 }
             } elseif ($atomic_type instanceof Type\Atomic\TPositiveInt) {
                 $positive_types[] = $atomic_type;
+            } elseif ($atomic_type instanceof Type\Atomic\TIntRange) {
+                if (!$atomic_type->isPositive()) {
+                    $did_remove_type = true;
+                }
+                $positive_types[] = new Type\Atomic\TIntRange(
+                    $atomic_type->min_bound === null ? 1 : max(1, $atomic_type->min_bound),
+                    $atomic_type->max_bound === null ? null : max(1, $atomic_type->max_bound)
+                );
             } elseif (get_class($atomic_type) === TInt::class) {
                 $positive_types[] = new Type\Atomic\TPositiveInt();
                 $did_remove_type = true;
@@ -926,6 +961,9 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                     $int_types[] = $type;
                 }
 
+                $did_remove_type = true;
+            } elseif ($type instanceof TString && $is_equality && !$is_strict_equality) {
+                $int_types[] = new TNumericString();
                 $did_remove_type = true;
             } else {
                 $did_remove_type = true;
@@ -1558,6 +1596,103 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         return $existing_var_type;
     }
 
+    private static function reconcileSuperiorTo(
+        Union $existing_var_type,
+        string $assertion,
+        bool $inside_loop
+    ) : Union {
+        $assertion_value = (int)$assertion;
+        foreach ($existing_var_type->getAtomicTypes() as $atomic_type) {
+            if ($inside_loop) {
+                continue;
+            }
+
+            if ($atomic_type instanceof Atomic\TIntRange) {
+                $existing_var_type->removeType($atomic_type->getKey());
+                if ($atomic_type->min_bound === null) {
+                    $atomic_type->min_bound = $assertion_value;
+                } else {
+                    $atomic_type->min_bound = Atomic\TIntRange::getNewHighestBound(
+                        $assertion_value,
+                        $atomic_type->min_bound
+                    );
+                }
+                $existing_var_type->addType($atomic_type);
+            } elseif ($atomic_type instanceof Atomic\TLiteralInt) {
+                $new_range = new Atomic\TIntRange($assertion_value, null);
+                if (!$new_range->contains($atomic_type->value)) {
+                    $existing_var_type->removeType($atomic_type->getKey());
+                } /*elseif ($inside_loop) {
+                    //when inside a loop, allow the range to extends the type
+                    $existing_var_type->removeType($atomic_type->getKey());
+                    if ($atomic_type->value < $assertion_value) {
+                        $existing_var_type->addType(new Atomic\TIntRange($atomic_type->value, $assertion_value));
+                    } else {
+                        $existing_var_type->addType(new Atomic\TIntRange($assertion_value, $atomic_type->value));
+                    }
+                }*/
+            } elseif ($atomic_type instanceof Atomic\TPositiveInt) {
+                if ($assertion_value <= 0) {
+                    //emit an issue here in the future about incompatible type
+                }
+                $existing_var_type->removeType($atomic_type->getKey());
+                $existing_var_type->addType(new Atomic\TIntRange($assertion_value, null));
+            } elseif ($atomic_type instanceof TInt) {
+                $existing_var_type->removeType($atomic_type->getKey());
+                $existing_var_type->addType(new Atomic\TIntRange($assertion_value, null));
+            }
+        }
+
+        return $existing_var_type;
+    }
+
+    private static function reconcileInferiorTo(
+        Union $existing_var_type,
+        string $assertion,
+        bool $inside_loop
+    ) : Union {
+        $assertion_value = (int)$assertion;
+        foreach ($existing_var_type->getAtomicTypes() as $atomic_type) {
+            if ($inside_loop) {
+                continue;
+            }
+
+            if ($atomic_type instanceof Atomic\TIntRange) {
+                $existing_var_type->removeType($atomic_type->getKey());
+                if ($atomic_type->max_bound === null) {
+                    $atomic_type->max_bound = $assertion_value;
+                } else {
+                    $atomic_type->max_bound = min($atomic_type->max_bound, $assertion_value);
+                }
+                $existing_var_type->addType($atomic_type);
+            } elseif ($atomic_type instanceof Atomic\TLiteralInt) {
+                $new_range = new Atomic\TIntRange(null, $assertion_value);
+                if (!$new_range->contains($atomic_type->value)) {
+                    $existing_var_type->removeType($atomic_type->getKey());
+                }/* elseif ($inside_loop) {
+                    //when inside a loop, allow the range to extends the type
+                    $existing_var_type->removeType($atomic_type->getKey());
+                    if ($atomic_type->value < $assertion_value) {
+                        $existing_var_type->addType(new Atomic\TIntRange($atomic_type->value, $assertion_value));
+                    } else {
+                        $existing_var_type->addType(new Atomic\TIntRange($assertion_value, $atomic_type->value));
+                    }
+                }*/
+            } elseif ($atomic_type instanceof Atomic\TPositiveInt) {
+                if ($assertion_value <= 0) {
+                    //emit an issue here in the future about incompatible type
+                }
+                $existing_var_type->removeType($atomic_type->getKey());
+                $existing_var_type->addType(new Atomic\TIntRange(1, $assertion_value));
+            } elseif ($atomic_type instanceof TInt) {
+                $existing_var_type->removeType($atomic_type->getKey());
+                $existing_var_type->addType(new Atomic\TIntRange(null, $assertion_value));
+            }
+        }
+
+        return $existing_var_type;
+    }
+
     /**
      * @param   string[]  $suppressed_issues
      * @param   0|1|2    $failed_reconciliation
@@ -1772,6 +1907,13 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                     } else {
                         $array_types[] = new TList($type->type_params[1]);
                     }
+                }
+
+                if ($type->type_params[0]->isEmpty()
+                    || $type->type_params[1]->isEmpty()
+                ) {
+                    //we allow an empty array to pass as a list. We keep the type as empty array though (more precise)
+                    $array_types[] = $type;
                 }
 
                 $did_remove_type = true;
@@ -2227,11 +2369,20 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
 
         if ($existing_var_type->hasInt()) {
             $existing_int_types = $existing_var_type->getLiteralInts();
+            $existing_range_types = $existing_var_type->getRangeInts();
 
             if ($existing_int_types) {
                 foreach ($existing_int_types as $int_key => $literal_type) {
                     if ($literal_type->value) {
                         $existing_var_type->removeType($int_key);
+                        $did_remove_type = true;
+                    }
+                }
+            } elseif ($existing_range_types) {
+                foreach ($existing_range_types as $int_key => $literal_type) {
+                    if ($literal_type->contains(0)) {
+                        $existing_var_type->removeType($int_key);
+                        $existing_var_type->addType(new Type\Atomic\TLiteralInt(0));
                         $did_remove_type = true;
                     }
                 }
@@ -2339,7 +2490,10 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             ) {
                 $did_remove_type = true;
 
-                $existing_var_type->removeType($type_key);
+                //SimpleXMLElement may be falsy
+                if (!$type instanceof TNamedObject || $type->value !== 'SimpleXMLElement') {
+                    $existing_var_type->removeType($type_key);
+                }
             }
 
             if ($type instanceof TTemplateParam) {
@@ -2364,6 +2518,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             }
         }
 
+        /** @psalm-suppress RedundantCondition can be empty after removing above */
         if ($existing_var_type->getAtomicTypes()) {
             return $existing_var_type;
         }
