@@ -490,8 +490,8 @@ return [
       'new' => ['false|GdImage', 'image'=>'GdImage', 'rectangle'=>'array'],
     ],
     'imagecropauto' => [
-      'old' => ['resource|false', 'im'=>'resource', 'mode'=>'int', 'threshold'=>'float', 'color'=>'int'],
-      'new' => ['false|GdImage', 'image'=>'GdImage', 'mode'=>'int', 'threshold'=>'float', 'color'=>'int'],
+      'old' => ['resource|false', 'im'=>'resource', 'mode='=>'int', 'threshold='=>'float', 'color='=>'int'],
+      'new' => ['false|GdImage', 'image'=>'GdImage', 'mode='=>'int', 'threshold='=>'float', 'color='=>'int'],
     ],
     'imagedashedline' => [
       'old' => ['bool', 'image'=>'resource', 'x1'=>'int', 'y1'=>'int', 'x2'=>'int', 'y2'=>'int', 'color'=>'int'],
@@ -896,6 +896,10 @@ return [
     'mktime' => [
       'old' => ['int|false', 'hour='=>'int', 'minute='=>'int', 'second='=>'int', 'month='=>'int', 'day='=>'int', 'year='=>'int'],
       'new' => ['int|false', 'hour'=>'int', 'minute='=>'int|null', 'second='=>'int|null', 'month='=>'int|null', 'day='=>'int|null', 'year='=>'int|null'],
+    ],
+    'openssl_pkey_get_private' => [
+      'old' => ['resource|false', 'private_key'=>'string', 'passphrase='=>'string'],
+      'new' => ['OpenSSLAsymmetricKey|false', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array|string', 'passphrase='=>'?string'],
     ],
     'openssl_x509_parse' => [
       'old' => ['array|false', 'certificate'=>'string|resource', 'short_names='=>'bool'],

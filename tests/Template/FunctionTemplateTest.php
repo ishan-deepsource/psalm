@@ -1517,7 +1517,7 @@ class FunctionTemplateTest extends TestCase
                         if (is_array($iterable)) {}
                     }'
             ],
-            'SKIPPED-transformNestedTemplateWherePossible' => [
+            'transformNestedTemplateWherePossible' => [
                 '<?php
                     /**
                      * @template TValue
@@ -1587,6 +1587,19 @@ class FunctionTemplateTest extends TestCase
                     }
 
                     map(iter(), "mapper");'
+            ],
+            'dontScreamForArithmeticsOnIntTemplates' => [
+                '<?php
+
+                    /**
+                     * @template T of int|string
+                     * @param T $p
+                     */
+                    function foo($p): void {
+                        if (is_int($p)) {
+                            $q = $p - 1;
+                        }
+                    }'
             ],
         ];
     }

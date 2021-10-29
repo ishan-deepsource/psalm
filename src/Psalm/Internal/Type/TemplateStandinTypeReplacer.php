@@ -12,7 +12,7 @@ use Psalm\Type\Union;
 use function array_merge;
 use function array_values;
 use function count;
-use function is_a;
+use function in_array;
 use function reset;
 use function strpos;
 use function substr;
@@ -469,6 +469,13 @@ class TemplateStandinTypeReplacer
                         $matching_atomic_types[$atomic_input_type->getId()] = $atomic_input_type;
                         continue;
                     }
+
+                    if (in_array('Traversable', $classlike_storage->class_implements)
+                        && $base_type->value === 'Iterator'
+                    ) {
+                        $matching_atomic_types[$atomic_input_type->getId()] = $atomic_input_type;
+                        continue;
+                    }
                 } catch (\InvalidArgumentException $e) {
                     // do nothing
                 }
@@ -485,11 +492,6 @@ class TemplateStandinTypeReplacer
                         $atomic_input_type->as
                     )
                 );
-                continue;
-            }
-
-            if (is_a($input_key, $key, true)) {
-                $matching_atomic_types[$atomic_input_type->getId()] = $atomic_input_type;
                 continue;
             }
         }
@@ -1094,7 +1096,7 @@ class TemplateStandinTypeReplacer
             $last_arg_offset = $template_bound->arg_offset;
         }
 
-        return $current_type ?: \Psalm\Type::getMixed();
+        return $current_type ?? \Psalm\Type::getMixed();
     }
 
     /**

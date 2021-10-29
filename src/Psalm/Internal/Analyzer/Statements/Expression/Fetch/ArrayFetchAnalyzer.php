@@ -115,7 +115,7 @@ class ArrayFetchAnalyzer
         $new_offset_type = null;
 
         if ($stmt->dim) {
-            $used_key_type = $statements_analyzer->node_data->getType($stmt->dim) ?: Type::getMixed();
+            $used_key_type = $statements_analyzer->node_data->getType($stmt->dim) ?? Type::getMixed();
 
             $dim_var_id = ExpressionIdentifier::getArrayVarId(
                 $stmt->dim,
@@ -1295,14 +1295,18 @@ class ArrayFetchAnalyzer
                 if ($codebase->config->ensure_array_string_offsets_exist
                     && $offset_type_contained_by_expected
                 ) {
-                    self::checkLiteralStringArrayOffset(
-                        $offset_type,
-                        $expected_offset_type,
-                        $array_var_id,
-                        $stmt,
-                        $context,
-                        $statements_analyzer
-                    );
+                    //we already know we found a match, so if the array is non-empty and the key is a literal,
+                    //then no need to check for PossiblyUndefinedStringArrayOffset
+                    if (!$type instanceof TNonEmptyArray || !$type->type_params[0]->isSingleStringLiteral()) {
+                        self::checkLiteralStringArrayOffset(
+                            $offset_type,
+                            $expected_offset_type,
+                            $array_var_id,
+                            $stmt,
+                            $context,
+                            $statements_analyzer
+                        );
+                    }
                 }
 
                 if ($codebase->config->ensure_array_int_offsets_exist
@@ -1807,9 +1811,7 @@ class ArrayFetchAnalyzer
                 $statements_analyzer->removeSuppressedIssues(['MixedMethodCall']);
             }
 
-            $call_array_access_type = $statements_analyzer->node_data->getType(
-                $fake_method_call
-            ) ?: Type::getMixed();
+            $call_array_access_type = $statements_analyzer->node_data->getType($fake_method_call) ?? Type::getMixed();
 
             $statements_analyzer->node_data = $old_data_provider;
         } else {
@@ -1840,11 +1842,10 @@ class ArrayFetchAnalyzer
                                 )
                         ),
                         new VirtualArg(
-                            $assign_value
-                                ?: new VirtualConstFetch(
-                                    new VirtualName('null'),
-                                    $stmt->var->getAttributes()
-                                )
+                            $assign_value ?? new VirtualConstFetch(
+                                new VirtualName('null'),
+                                $stmt->var->getAttributes()
+                            )
                         ),
                     ]
                 );
@@ -1879,8 +1880,8 @@ class ArrayFetchAnalyzer
                     $context
                 );
 
-                $call_array_access_type = $statements_analyzer->node_data->getType($fake_get_method_call)
-                    ?: Type::getMixed();
+                $call_array_access_type =
+                    $statements_analyzer->node_data->getType($fake_get_method_call) ?? Type::getMixed();
 
                 $statements_analyzer->node_data = $old_node_data;
             } else {

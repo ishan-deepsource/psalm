@@ -23,6 +23,7 @@ use function array_values;
 use function count;
 use function get_class;
 use function implode;
+use function ksort;
 use function reset;
 use function sort;
 use function strpos;
@@ -497,7 +498,7 @@ class Union implements TypeNode
 
         $nullable = false;
 
-        if (isset($types['null']) && count($types) === 2) {
+        if (isset($types['null']) && count($types) > 1) {
             unset($types['null']);
 
             $nullable = true;
@@ -530,10 +531,21 @@ class Union implements TypeNode
         }
 
         if ($falsable) {
-            return ($nullable ? '?' : '') . implode('|', array_unique($php_types)) . '|false';
+            if ($nullable) {
+                $php_types['null'] = 'null';
+            }
+            $php_types['false'] = 'false';
+            ksort($php_types);
+            return implode('|', array_unique($php_types));
         }
 
-        return ($nullable ? '?' : '') . implode('|', array_unique($php_types));
+        if ($php_major_version < 8) {
+            return ($nullable ? '?' : '') . implode('|', array_unique($php_types));
+        }
+        if ($nullable) {
+            $php_types['null'] = 'null';
+        }
+        return implode('|', array_unique($php_types));
     }
 
     public function canBeFullyExpressedInPhp(int $php_major_version, int $php_minor_version): bool
@@ -839,27 +851,6 @@ class Union implements TypeNode
         return isset($this->types['float']) || $this->literal_float_types;
     }
 
-    public function hasDefinitelyNumericType(bool $include_literal_int = true): bool
-    {
-        return isset($this->types['int'])
-            || isset($this->types['float'])
-            || isset($this->types['numeric-string'])
-            || isset($this->types['numeric'])
-            || ($include_literal_int && $this->literal_int_types)
-            || $this->literal_float_types;
-    }
-
-    public function hasPossiblyNumericType(): bool
-    {
-        return isset($this->types['int'])
-            || isset($this->types['float'])
-            || isset($this->types['string'])
-            || isset($this->types['numeric-string'])
-            || $this->literal_int_types
-            || $this->literal_float_types
-            || $this->literal_string_types;
-    }
-
     public function hasScalar(): bool
     {
         return isset($this->types['scalar']);
@@ -1026,6 +1017,10 @@ class Union implements TypeNode
                 continue;
             }
 
+            if ($atomic_type instanceof Type\Atomic\TArray && $atomic_type->getId() === 'array<empty, empty>') {
+                continue;
+            }
+
             //we can't be sure the type is always falsy
             return false;
         }
@@ -1075,7 +1070,15 @@ class Union implements TypeNode
                 continue;
             }
 
+            if ($atomic_type instanceof Type\Atomic\TNonEmptyScalar) {
+                continue;
+            }
+
             if ($atomic_type instanceof Type\Atomic\TNonEmptyList) {
+                continue;
+            }
+
+            if ($atomic_type instanceof Type\Atomic\TNonEmptyMixed) {
                 continue;
             }
 
@@ -1101,6 +1104,10 @@ class Union implements TypeNode
             }
 
             if ($atomic_type instanceof Type\Atomic\TClassString) {
+                continue;
+            }
+
+            if ($atomic_type instanceof Type\Atomic\TDependentGetClass) {
                 continue;
             }
 

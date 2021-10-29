@@ -575,7 +575,7 @@ class ScalarTypeComparator
                     $codebase,
                     $input_callable,
                     $container_callable,
-                    $atomic_comparison_result ?: new TypeComparisonResult()
+                    $atomic_comparison_result ?? new TypeComparisonResult()
                 ) === false
                 ) {
                     return false;
@@ -583,6 +583,11 @@ class ScalarTypeComparator
             }
 
             return true;
+        }
+
+        if ($input_type_part instanceof TLowercaseString
+            && get_class($container_type_part) === TNonEmptyString::class) {
+            return false;
         }
 
         if ($input_type_part->getKey() === $container_type_part->getKey()) {

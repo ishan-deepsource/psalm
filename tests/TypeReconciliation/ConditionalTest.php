@@ -630,7 +630,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                         $b_or_d->foo();
                     }',
             ],
-            'SKIPPED-isArrayOnArrayKeyOffset' => [
+            'isArrayOnArrayKeyOffset' => [
                 '<?php
                     /** @var array{s:array<mixed, array<int, string>|string>} */
                     $doc = [];
@@ -2749,6 +2749,64 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                         echo "false";
                     }',
             ],
+            'nullIsFalsyEvenInTemplate' => [
+                '<?php
+
+                    abstract class Animal {
+                        public function foo(): void {}
+                    }
+
+                    class Dog extends Animal {}
+                    class Cat extends Animal {}
+
+                    /**
+                     * @template T
+                     */
+                    interface RepositoryInterface
+                    {
+                        /**
+                        * @return ?T
+                        */
+                        public function find(int $id);
+                    }
+
+                    /**
+                     * @template T
+                     * @implements RepositoryInterface<T>
+                     */
+                    class AbstarctRepository  implements RepositoryInterface
+                    {
+                        public function find(int $id) {
+                            return null;
+                        }
+                    }
+
+                    /**
+                     * @template T as Animal
+                     * @extends AbstarctRepository<T>
+                     */
+                    class AnimalRepository extends AbstarctRepository {}
+
+                    /**
+                     * @extends AnimalRepository<Cat>
+                     */
+                    class CatRepository extends AnimalRepository {}
+
+                    /**
+                     * @extends AnimalRepository<Dog>
+                     */
+                    class DogRepository extends AnimalRepository {}
+
+                    function doSomething(AnimalRepository $repository) : void {
+                        $foo = $repository->find(1);
+
+                        if (!$foo) {
+                            return;
+                        }
+
+                        $foo->foo();
+                    }',
+            ],
         ];
     }
 
@@ -2923,7 +2981,7 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     echo $i === 3;',
                 'error_message' => 'TypeDoesNotContainType',
             ],
-            'SKIPPED-noIntersectionOfArrayOrTraversable' => [
+            'noIntersectionOfArrayOrTraversable' => [
                 '<?php
                     function foo(iterable $iterable) : void {
                         if (\is_array($iterable) && $iterable instanceof \Traversable) {}
@@ -3134,6 +3192,22 @@ class ConditionalTest extends \Psalm\Tests\TestCase
                     }
                     ',
                 'error_message' => 'TypeDoesNotContainType',
+            ],
+            'redundantConditionForNonEmptyString' => [
+                '<?php
+
+                    /**
+                     * @param non-empty-string $c
+                     */
+                    function c(string $c): void {
+                        if ($c) {
+                          if ($c) {
+                              echo "hello";
+                          }
+                      }
+                    }
+                    ',
+                'error_message' => 'RedundantCondition',
             ],
         ];
     }

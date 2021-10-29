@@ -4,6 +4,12 @@ namespace {
         /** @return non-empty-list<static> */
         public static function cases(): array;
     }
+
+    #[Attribute]
+    final class ReturnTypeWillChange
+    {
+        public function __construct() {}
+    }
 }
 
 namespace FTP {
@@ -20,7 +26,13 @@ namespace LDAP {
    final class ResultEntry {}
 }
 
+namespace PgSql {
+   final class Connection {}
+   final class Result {}
+   final class Lob {}
+}
+
 namespace PSpell {
      final class Config {}
      final class Dictionary {}
-}   
+}

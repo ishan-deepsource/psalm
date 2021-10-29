@@ -811,6 +811,54 @@ class ConditionalReturnTypeTest extends TestCase
                         return iterator_to_array($iterable, false);
                     }'
             ],
+            'dontChokeOnFalsyAssertionsWithTemplatesInLoop' => [
+                '<?php
+                    /**
+                     * @psalm-return ($list_output is true ? list : array)
+                     */
+                    function scope(bool $list_output = true): array
+                    {
+                        for ($i = 0; $i < 5; $i++) {
+                            $list_output ? [] : [];
+                        }
+
+                        return [];
+                    }
+                    '
+            ],
+            'dontChokeOnFalsyAssertionsWithTemplatesOutsideLoop' => [
+                '<?php
+                    class A {}
+                    class B {}
+
+                    /**
+                     * @psalm-return ($a is true ? list<A> : list<B>)
+                     */
+                    function get_liste_designation_client(bool $a = false) {
+                        (!$a ? "a" : "b");
+                        (!$a ? "a" : "b");
+                        return [];
+                    }
+                    '
+            ],
+            'strlenReturnsIntForLowercaseString' => [
+                '<?php
+                    /**
+                     * @psalm-return (
+                     *     $string is non-empty-string
+                     *     ? positive-int
+                     *     : int
+                     * )
+                     */
+                    function strlen2(string $string) : int { return 1;}
+
+                    function test(string $s): void {
+                        if (strlen2(strtolower($s))) {
+                            echo 1;
+                        }
+                    }
+                    '
+            ],
         ];
     }
 }

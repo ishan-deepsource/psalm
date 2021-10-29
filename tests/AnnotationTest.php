@@ -41,6 +41,19 @@ class AnnotationTest extends TestCase
         $this->analyzeFile('somefile.php', new Context());
     }
 
+    public function testPhpStormGenericsWithTypeInSignature(): void
+    {
+        Config::getInstance()->allow_phpstorm_generics = true;
+
+        $this->addFile(
+            'somefile.php',
+            '<?php
+                function a(array|\ArrayObject $_meta = []): void {}'
+        );
+
+        $this->analyzeFile('somefile.php', new Context());
+    }
+
     public function testPhpStormGenericsWithValidTraversableArgument(): void
     {
         Config::getInstance()->allow_phpstorm_generics = true;
@@ -1290,6 +1303,22 @@ class AnnotationTest extends TestCase
                     $_b = new A();
                     echo (string)($a->getConfig()[0]??"");'
             ],
+            'promotedPropertiesDocumentationEitherForParamOrForProperty' => [
+                '<?php
+                    final class UserRole
+                    {
+                        /** @psalm-param stdClass $id */
+                        public function __construct(
+                            protected $id,
+                            /** @psalm-var stdClass */
+                            protected $id2
+                        ) {
+                        }
+                    }
+
+                    new UserRole(new stdClass(), new stdClass());
+                    '
+            ],
         ];
     }
 
@@ -1869,6 +1898,52 @@ class AnnotationTest extends TestCase
                 ",
                 'error_message' => 'InvalidDocblock',
             ],
+            'promotedPropertiesDocumentationFailsWhenSendingBadTypeAgainstParam' => [
+                '<?php
+                    final class UserRole
+                    {
+                        /** @psalm-param stdClass $id */
+                        public function __construct(
+                            protected $id
+                        ) {
+                        }
+
+                    }
+                    new UserRole("a");
+                    ',
+                'error_message' => 'InvalidArgument',
+            ],
+            'promotedPropertiesDocumentationFailsWhenSendingBadTypeAgainstProperty' => [
+                '<?php
+                    final class UserRole
+                    {
+                        public function __construct(
+                            /** @psalm-var stdClass */
+                            protected $id2
+                        ) {
+                        }
+                    }
+
+                    new UserRole("a");
+                    ',
+                'error_message' => 'InvalidArgument',
+            ],
+            'promotedPropertyDuplicateDoc' => [
+                '<?php
+                    final class UserRole
+                    {
+                        /** @psalm-param string $id */
+                        public function __construct(
+                            /** @psalm-var stdClass */
+                            protected $id
+                        ) {
+                        }
+                    }
+                    ',
+                'error_message' => 'InvalidDocblock',
+            ],
+
+
         ];
     }
 }
