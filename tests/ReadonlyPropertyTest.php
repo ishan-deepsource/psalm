@@ -1,12 +1,15 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 use const DIRECTORY_SEPARATOR;
 
 class ReadonlyPropertyTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -239,6 +242,34 @@ class ReadonlyPropertyTest extends TestCase
                         public readonly string $s = "a";
                     }',
                 'error_message' => 'InvalidPropertyAssignment',
+                [],
+                false,
+                '8.1',
+            ],
+            'readonlyPromotedPropertyAssignOperator' => [
+                '<?php
+                    class A {
+                        public function __construct(public readonly string $bar) {
+                        }
+                    }
+
+                    $a = new A("hello");
+                    $a->bar = "goodbye";',
+                'error_message' => 'InaccessibleProperty - src' . DIRECTORY_SEPARATOR . 'somefile.php:8:21',
+                [],
+                false,
+                '8.1',
+            ],
+            'readonlyPromotedPropertyAccess' => [
+                '<?php
+                    class A {
+                        public function __construct(private readonly string $bar) {
+                        }
+                    }
+
+                    $a = new A("hello");
+                    $b = $a->bar;',
+                'error_message' => 'InaccessibleProperty - src' . DIRECTORY_SEPARATOR . 'somefile.php:8:26',
                 [],
                 false,
                 '8.1',

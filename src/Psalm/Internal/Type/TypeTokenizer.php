@@ -3,6 +3,7 @@ namespace Psalm\Internal\Type;
 
 use Psalm\Aliases;
 use Psalm\Exception\TypeParseTreeException;
+use Psalm\Type;
 
 use function array_splice;
 use function array_unshift;
@@ -306,7 +307,7 @@ class TypeTokenizer
     public static function fixScalarTerms(
         string $type_string,
         ?array $php_version = null
-    ) : string {
+    ): string {
         $type_string_lc = strtolower($type_string);
 
         switch ($type_string_lc) {
@@ -465,7 +466,10 @@ class TypeTokenizer
                 continue;
             }
 
-            if ($string_type_token[0] === 'func_num_args()' || $string_type_token[0] === 'PHP_MAJOR_VERSION') {
+            if ($string_type_token[0] === 'func_num_args()'
+                || $string_type_token[0] === 'PHP_MAJOR_VERSION'
+                || $string_type_token[0] === 'PHP_VERSION_ID'
+            ) {
                 continue;
             }
 
@@ -488,7 +492,7 @@ class TypeTokenizer
                     $l += $diff;
                 }
             } else {
-                $type_tokens[$i][0] = \Psalm\Type::getFQCLNFromString(
+                $type_tokens[$i][0] = Type::getFQCLNFromString(
                     $string_type_token[0],
                     $aliases
                 );
@@ -499,7 +503,7 @@ class TypeTokenizer
         return $type_tokens;
     }
 
-    public static function clearCache() : void
+    public static function clearCache(): void
     {
         self::$memoized_tokens = [];
     }

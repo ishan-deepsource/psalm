@@ -10,13 +10,15 @@ use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 use Psalm\Type;
 
+use function in_array;
+
 class EncapsulatedStringAnalyzer
 {
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Scalar\Encapsed $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $stmt_type = Type::getString();
 
         $non_empty = false;
@@ -49,7 +51,7 @@ class EncapsulatedStringAnalyzer
                 }
 
                 if ($statements_analyzer->data_flow_graph
-                    && !\in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+                    && !in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
                 ) {
                     $var_location = new CodeLocation($statements_analyzer, $part);
 

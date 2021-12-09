@@ -1,10 +1,13 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class DeprecatedAnnotationTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -231,6 +234,21 @@ class DeprecatedAnnotationTest extends TestCase
 
                     function foo(DeprecatedClass $deprecatedClass): void {}',
                 'error_message' => 'DeprecatedClass',
+            ],
+            'deprecatedStaticPropertyFetch' => [
+                '<?php
+
+                    class Bar
+                    {
+                        /**
+                         * @deprecated
+                         */
+                        public static bool $deprecatedPropery = false;
+                    }
+
+                    Bar::$deprecatedPropery;
+                    ',
+                'error_message' => 'DeprecatedProperty',
             ],
         ];
     }

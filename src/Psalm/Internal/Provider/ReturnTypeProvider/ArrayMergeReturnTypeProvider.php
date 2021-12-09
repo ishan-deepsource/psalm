@@ -1,28 +1,33 @@
 <?php
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Type\TypeCombiner;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
 
 use function array_merge;
 use function array_values;
+use function count;
+use function is_string;
+use function max;
 
-class ArrayMergeReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+class ArrayMergeReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return ['array_merge', 'array_replace'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Type\Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer
+        if (!$statements_source instanceof StatementsAnalyzer
             || !$call_args
         ) {
             return Type::getMixed();
@@ -80,13 +85,13 @@ class ArrayMergeReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functio
                         }
 
                         if ($unpacked_type_part instanceof Type\Atomic\TKeyedArray) {
-                            $max_keyed_array_size = \max(
+                            $max_keyed_array_size = max(
                                 $max_keyed_array_size,
-                                \count($unpacked_type_part->properties)
+                                count($unpacked_type_part->properties)
                             );
 
                             foreach ($unpacked_type_part->properties as $key => $type) {
-                                if (!\is_string($key)) {
+                                if (!is_string($key)) {
                                     $generic_properties[] = $type;
                                     continue;
                                 }
@@ -193,7 +198,7 @@ class ArrayMergeReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functio
             $inner_value_type = TypeCombiner::combine($inner_value_types, $codebase, true);
         }
 
-        $generic_property_count = \count($generic_properties);
+        $generic_property_count = count($generic_properties);
 
         if ($generic_properties
             && $generic_property_count < 64

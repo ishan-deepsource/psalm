@@ -6,6 +6,8 @@ use Psalm\Config;
 use Psalm\DocComment;
 use Psalm\FileManipulation;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
+use Psalm\Internal\Scanner\ParsedDocblock;
+use UnexpectedValueException;
 
 use function array_shift;
 use function count;
@@ -14,6 +16,7 @@ use function str_replace;
 use function strlen;
 use function strrpos;
 use function substr;
+use function substr_count;
 
 /**
  * @internal
@@ -68,7 +71,7 @@ class PropertyDocblockManipulator
         ProjectAnalyzer $project_analyzer,
         string $file_path,
         Property $stmt
-    ) : self {
+    ): self {
         if (isset(self::$manipulators[$file_path][$stmt->getLine()])) {
             return self::$manipulators[$file_path][$stmt->getLine()];
         }
@@ -97,7 +100,7 @@ class PropertyDocblockManipulator
         if (count($stmt->props) > 1) {
             $config = Config::getInstance();
             if ($config->isInProjectDirs($file_path)) {
-                throw new \UnexpectedValueException('Cannot replace multiple inline properties in ' . $file_path);
+                throw new UnexpectedValueException('Cannot replace multiple inline properties in ' . $file_path);
             }
 
             $this->indentation = '';
@@ -132,7 +135,7 @@ class PropertyDocblockManipulator
                     $preceding_newline_pos - $preceding_semicolon_pos - 1
                 );
 
-                if (!\substr_count($preceding_space, "\n")) {
+                if (!substr_count($preceding_space, "\n")) {
                     $this->add_newline = true;
                 }
             }
@@ -149,7 +152,7 @@ class PropertyDocblockManipulator
         string $phpdoc_type,
         bool $is_php_compatible,
         ?string $description = null
-    ) : void {
+    ): void {
         $new_type = str_replace(['<mixed, mixed>', '<array-key, mixed>', '<empty, empty>'], '', $new_type);
 
         $this->new_php_type = $php_type;
@@ -171,7 +174,7 @@ class PropertyDocblockManipulator
         if ($docblock) {
             $parsed_docblock = DocComment::parsePreservingLength($docblock);
         } else {
-            $parsed_docblock = new \Psalm\Internal\Scanner\ParsedDocblock('', []);
+            $parsed_docblock = new ParsedDocblock('', []);
         }
 
         $modified_docblock = false;

@@ -1,12 +1,16 @@
 <?php
 namespace Psalm\Tests\TypeReconciliation;
 
+use Psalm\Tests\TestCase;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 use const DIRECTORY_SEPARATOR;
 
-class ScopeTest extends \Psalm\Tests\TestCase
+class ScopeTest extends TestCase
 {
-    use \Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
-    use \Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -60,7 +64,7 @@ class ScopeTest extends \Psalm\Tests\TestCase
                         }
                     }
 
-                    $a = rand(0, 10) === 5 ? new A(): null;
+                    $a = rand(0, 10) === 5 ? new A() : null;
 
                     if (rand(0, 1)) {
 

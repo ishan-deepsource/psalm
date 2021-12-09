@@ -7,6 +7,7 @@ use Psalm\Context;
 use Psalm\Internal\Analyzer\FunctionAnalyzer;
 use Psalm\Internal\Analyzer\MethodAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Issue\UndefinedConstant;
 use Psalm\IssueBuffer;
 use Psalm\Type;
@@ -17,22 +18,20 @@ class MagicConstAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Scalar\MagicConst $stmt,
         Context $context
-    ) : void {
+    ): void {
         if ($stmt instanceof PhpParser\Node\Scalar\MagicConst\Line) {
             $statements_analyzer->node_data->setType($stmt, Type::getInt());
         } elseif ($stmt instanceof PhpParser\Node\Scalar\MagicConst\Class_) {
             $codebase = $statements_analyzer->getCodebase();
 
             if (!$context->self) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new UndefinedConstant(
                         'Cannot get __class__ outside a class',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
 
                 $statements_analyzer->node_data->setType($stmt, Type::getClassString());
             } else {
@@ -86,7 +85,7 @@ class MagicConstAnalyzer
         ) {
             $statements_analyzer->node_data->setType($stmt, new Type\Union([new Type\Atomic\TNonEmptyString()]));
         } elseif ($stmt instanceof PhpParser\Node\Scalar\MagicConst\Trait_) {
-            if ($statements_analyzer->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer) {
+            if ($statements_analyzer->getSource() instanceof TraitAnalyzer) {
                 $statements_analyzer->node_data->setType($stmt, new Type\Union([new Type\Atomic\TNonEmptyString()]));
             } else {
                 $statements_analyzer->node_data->setType($stmt, Type::getString());

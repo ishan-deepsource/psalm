@@ -1,12 +1,15 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 use const DIRECTORY_SEPARATOR;
 
 class ReturnTypeTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -23,7 +26,7 @@ class ReturnTypeTest extends TestCase
                          * @return One|null
                          */
                         public function barBar() {
-                            $baz = rand(0,100) > 50 ? new One(): null;
+                            $baz = rand(0,100) > 50 ? new One() : null;
 
                             // should have no effect
                             if ($baz === null) {
@@ -978,6 +981,89 @@ class ReturnTypeTest extends TestCase
                         }
                     }'
             ],
+            'NeverAndVoid' => [
+                '<?php
+                    function foo(): void
+                    {
+                        foreach ([0, 1, 2] as $_i) {
+                            return;
+                        }
+
+                        throw new \Exception();
+                    }'
+            ],
+            'neverAndVoidOnConditional' => [
+                '<?php
+                    /**
+                     * @template T as bool
+                     * @param T $end
+                     * @return (T is true ? never : void)
+                     */
+                    function a($end): void{
+                        if($end){
+                            die();
+                        }
+                    }'
+            ],
+            'returnTypeOfAbstractAndConcreteMethodFromTemplatedTraits' => [
+                '<?php
+                    /** @template T */
+                    trait ImplementerTrait {
+                        /** @var T */
+                        private $value;
+
+                        /** @psalm-return T */
+                        public function getValue() {
+                            return $this->value;
+                        }
+                    }
+
+                    /** @template T */
+                    trait GuideTrait {
+                        /** @psalm-return T */
+                        abstract public function getValue();
+                    }
+
+                    class Test {
+                        /** @use ImplementerTrait<int> */
+                        use ImplementerTrait;
+
+                        /** @use GuideTrait<int> */
+                        use GuideTrait;
+
+                        public function __construct() {
+                            $this->value = 123;
+                        }
+                    }'
+            ],
+            'returnTypeOfAbstractMethodFromTemplatedTraitAndImplementationFromNonTemplatedTrait' => [
+                '<?php
+                    trait ImplementerTrait {
+                        /** @var int */
+                        private $value;
+
+                        public function getValue(): int {
+                            return $this->value;
+                        }
+                    }
+
+                    /** @psalm-template T */
+                    trait GuideTrait {
+                        /** @psalm-return T */
+                        abstract public function getValue();
+                    }
+
+                    class Test {
+                        use ImplementerTrait;
+
+                        /** @template-use GuideTrait<int> */
+                        use GuideTrait;
+
+                        public function __construct() {
+                            $this->value = 123;
+                        }
+                    }'
+            ],
         ];
     }
 
@@ -1411,6 +1497,39 @@ class ReturnTypeTest extends TestCase
                 ',
                 'error_message' => 'LessSpecificReturnStatement',
             ],
+            'lessSpecificImplementedReturnTypeFromTemplatedTraitMethod' => [
+                '<?php
+                    /** @template T */
+                    trait ImplementerTrait {
+                        /** @var T */
+                        private $value;
+
+                        /** @psalm-return T */
+                        public function getValue() {
+                            return $this->value;
+                        }
+                    }
+
+                    /** @template T */
+                    trait GuideTrait {
+                        /** @psalm-return T */
+                        abstract public function getValue();
+                    }
+
+                    /** @template T */
+                    class Test {
+                        /** @use ImplementerTrait<T> */
+                        use ImplementerTrait;
+
+                        /** @use GuideTrait<int> */
+                        use GuideTrait;
+
+                        public function __construct() {
+                            $this->value = 123;
+                        }
+                    }',
+                    'error_message' => 'LessSpecificImplementedReturnType',
+            ]
         ];
     }
 }

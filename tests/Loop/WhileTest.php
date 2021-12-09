@@ -1,12 +1,14 @@
 <?php
 namespace Psalm\Tests\Loop;
 
-use Psalm\Tests\Traits;
+use Psalm\Tests\TestCase;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
-class WhileTest extends \Psalm\Tests\TestCase
+class WhileTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -33,7 +35,7 @@ class WhileTest extends \Psalm\Tests\TestCase
                         public $parent;
 
                         public function __construct() {
-                            $this->parent = rand(0, 1) ? new A(): new B();
+                            $this->parent = rand(0, 1) ? new A() : new B();
                         }
                     }
 
@@ -58,7 +60,7 @@ class WhileTest extends \Psalm\Tests\TestCase
                         public $parent;
 
                         public function __construct() {
-                            $this->parent = rand(0, 1) ? new A(): new B();
+                            $this->parent = rand(0, 1) ? new A() : new B();
                         }
                     }
 
@@ -85,7 +87,7 @@ class WhileTest extends \Psalm\Tests\TestCase
                         public $parent;
 
                         public function __construct() {
-                            $this->parent = rand(0, 1) ? new A(): null;
+                            $this->parent = rand(0, 1) ? new A() : null;
                         }
                     }
 
@@ -109,7 +111,7 @@ class WhileTest extends \Psalm\Tests\TestCase
                         public $parent;
 
                         public function __construct() {
-                            $this->parent = rand(0, 1) ? new A(): null;
+                            $this->parent = rand(0, 1) ? new A() : null;
                         }
                     }
 

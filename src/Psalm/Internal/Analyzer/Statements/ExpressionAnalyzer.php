@@ -6,19 +6,23 @@ use Psalm\CodeLocation;
 use Psalm\Config;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\ClosureAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\ArgumentAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\FunctionCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\NewAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\StaticCallAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
-use Psalm\Internal\Codebase\VariableUseGraph;
+use Psalm\Internal\Codebase\TaintFlowGraph;
 use Psalm\Internal\DataFlow\DataFlowNode;
+use Psalm\Internal\DataFlow\TaintSink;
 use Psalm\Internal\FileManipulation\FileManipulationBuffer;
 use Psalm\Issue\ForbiddenCode;
 use Psalm\Issue\UnrecognizedExpression;
 use Psalm\IssueBuffer;
 use Psalm\Plugin\EventHandler\Event\AfterExpressionAnalysisEvent;
+use Psalm\Storage\FunctionLikeParameter;
 use Psalm\Type;
+use Psalm\Type\TaintKind;
 
 use function get_class;
 use function in_array;
@@ -36,7 +40,7 @@ class ExpressionAnalyzer
         bool $array_assignment = false,
         ?Context $global_context = null,
         bool $from_stmt = false
-    ) : bool {
+    ): bool {
         $codebase = $statements_analyzer->getCodebase();
 
         if (self::handleExpression(
@@ -110,7 +114,7 @@ class ExpressionAnalyzer
         bool $array_assignment,
         ?Context $global_context,
         bool $from_stmt
-    ) : bool {
+    ): bool {
         if ($stmt instanceof PhpParser\Node\Expr\Variable) {
             return Expression\Fetch\VariableFetchAnalyzer::analyze(
                 $statements_analyzer,
@@ -338,7 +342,23 @@ class ExpressionAnalyzer
         }
 
         if ($stmt instanceof PhpParser\Node\Expr\ShellExec) {
-            if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph) {
+            if ($statements_analyzer->data_flow_graph) {
+                $call_location = new CodeLocation($statements_analyzer->getSource(), $stmt);
+
+                if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph) {
+                    $sink = TaintSink::getForMethodArgument(
+                        'shell_exec',
+                        'shell_exec',
+                        0,
+                        null,
+                        $call_location
+                    );
+
+                    $sink->taints = [TaintKind::INPUT_SHELL];
+
+                    $statements_analyzer->data_flow_graph->addSink($sink);
+                }
+
                 foreach ($stmt->parts as $part) {
                     if ($part instanceof PhpParser\Node\Expr\Variable) {
                         if (self::analyze($statements_analyzer, $part, $context) === false) {
@@ -348,6 +368,32 @@ class ExpressionAnalyzer
                         $expr_type = $statements_analyzer->node_data->getType($part);
                         if ($expr_type === null) {
                             break;
+                        }
+
+                        $shell_exec_param = new FunctionLikeParameter(
+                            'var',
+                            false
+                        );
+
+                        if (ArgumentAnalyzer::verifyType(
+                            $statements_analyzer,
+                            $expr_type,
+                            Type::getString(),
+                            null,
+                            'shell_exec',
+                            null,
+                            0,
+                            $call_location,
+                            $stmt,
+                            $context,
+                            $shell_exec_param,
+                            false,
+                            null,
+                            true,
+                            true,
+                            new CodeLocation($statements_analyzer, $stmt)
+                        ) === false) {
+                            return false;
                         }
 
                         foreach ($expr_type->parent_nodes as $parent_node) {
@@ -361,15 +407,13 @@ class ExpressionAnalyzer
                 }
             }
 
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new ForbiddenCode(
                     'Use of shell_exec',
                     new CodeLocation($statements_analyzer->getSource(), $stmt)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // continue
-            }
+            );
 
             return true;
         }

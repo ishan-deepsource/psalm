@@ -2,7 +2,6 @@
 
 [![Packagist](https://img.shields.io/packagist/v/vimeo/psalm.svg)](https://packagist.org/packages/vimeo/psalm)
 [![Packagist](https://img.shields.io/packagist/dt/vimeo/psalm.svg)](https://packagist.org/packages/vimeo/psalm)
-[![Coverage Status](https://coveralls.io/repos/github/vimeo/psalm/badge.svg)](https://coveralls.io/github/vimeo/psalm)
 [![Psalm coverage](https://shepherd.dev/github/vimeo/psalm/coverage.svg?)](https://shepherd.dev/github/vimeo/psalm)
 [![Psalm level](https://shepherd.dev/github/vimeo/psalm/level.svg?)](https://psalm.dev/)
 
@@ -28,6 +27,6 @@ Have a look at [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Built by Matt Brown ([@muglug](https://github.com/muglug)).
 
-Maintained by Matt and Bruce Weirdan ([@weirdan](https://github.com/weirdan)).
+Maintained by Orklah ([@orklah](https://github.com/orklah)) and Bruce Weirdan ([@weirdan](https://github.com/weirdan)).
 
 The engineering team at [Vimeo](https://github.com/vimeo) have provided a lot encouragement, especially [@nbeliard](https://github.com/nbeliard), [@erunion](https://github.com/erunion) and [@nickyr](https://github.com/nickyr).

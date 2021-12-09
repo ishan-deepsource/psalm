@@ -1,7 +1,9 @@
 <?php
 namespace Psalm\Tests\Internal\Provider;
 
-class ProjectCacheProvider extends \Psalm\Internal\Provider\ProjectCacheProvider
+use Psalm\Internal\Provider\ProjectCacheProvider as PsalmProjectCacheProvider;
+
+class ProjectCacheProvider extends PsalmProjectCacheProvider
 {
     /**
      * @var int
@@ -27,12 +29,12 @@ class ProjectCacheProvider extends \Psalm\Internal\Provider\ProjectCacheProvider
         return $this->last_run > 0;
     }
 
-    public function hasLockfileChanged() : bool
+    public function hasLockfileChanged(): bool
     {
         return false;
     }
 
-    public function updateComposerLockHash() : void
+    public function updateComposerLockHash(): void
     {
     }
 }

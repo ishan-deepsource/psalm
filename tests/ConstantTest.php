@@ -1,13 +1,16 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class ConstantTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
-     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
+     * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[], php_version?: string}>
      */
     public function providerValidCodeParse(): iterable
     {
@@ -1180,6 +1183,22 @@ class ConstantTest extends TestCase
 
                     }',
             ],
+            'classConstantReferencingEnumCase' => [
+                '<?php
+                    enum E {
+                        case Z;
+                    }
+                    class C {
+                        public const CC = E::Z;
+                    }
+                    $c = C::CC;
+                ',
+                'assertions' => [
+                    '$c===' => 'enum(E::Z)'
+                ],
+                [],
+                '8.1'
+            ],
         ];
     }
 
@@ -1429,6 +1448,39 @@ class ConstantTest extends TestCase
                         }
                     }',
                 'error_message' => 'UndefinedClass',
+            ],
+            'duplicateConstants' => [
+                '<?php
+                    class A {
+                        public const B = 1;
+                        public const B = 2;
+                    }
+                ',
+                'error_message' => 'DuplicateConstant',
+            ],
+            'constantDuplicatesEnumCase' => [
+                '<?php
+                    enum State {
+                        case Open;
+                        public const Open = 1;
+                    }
+                ',
+                'error_message' => 'DuplicateConstant',
+                [],
+                false,
+                '8.1',
+            ],
+            'enumCaseDuplicatesConstant' => [
+                '<?php
+                    enum State {
+                        public const Open = 1;
+                        case Open;
+                    }
+                ',
+                'error_message' => 'DuplicateConstant',
+                [],
+                false,
+                '8.1',
             ],
         ];
     }

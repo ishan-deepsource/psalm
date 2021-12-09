@@ -3,9 +3,15 @@
 namespace Psalm\Internal;
 
 use Composer\Autoload\ClassLoader;
+use PackageVersions\Versions;
 use Phar;
 use Psalm\Config;
+use Psalm\Config\Creator;
+use Psalm\Exception\ConfigException;
+use Psalm\Exception\ConfigNotFoundException;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\Composer;
+use Psalm\Report;
 
 use function assert;
 use function count;
@@ -141,8 +147,8 @@ final class CliUtils
             exit(1);
         }
 
-        define('PSALM_VERSION', \PackageVersions\Versions::getVersion('vimeo/psalm'));
-        define('PHP_PARSER_VERSION', \PackageVersions\Versions::getVersion('nikic/php-parser'));
+        define('PSALM_VERSION', Versions::getVersion('vimeo/psalm'));
+        define('PHP_PARSER_VERSION', Versions::getVersion('nikic/php-parser'));
 
         return $first_autoloader;
     }
@@ -342,6 +348,9 @@ Basic configuration:
     --no-diff
         Turns off Psalm’s diff mode, checks all files regardless of whether they’ve changed.
 
+    --php-version=PHP_VERSION
+        Explicitly set PHP version to analyse code against.
+
 Surfacing issues:
     --show-info[=BOOLEAN]
         Show non-exception parser findings (defaults to false).
@@ -489,9 +498,9 @@ HELP;
             } else {
                 try {
                     $config = Config::getConfigForPath($current_dir, $current_dir);
-                } catch (\Psalm\Exception\ConfigNotFoundException $e) {
+                } catch (ConfigNotFoundException $e) {
                     if (!$create_if_non_existent) {
-                        if (in_array($output_format, [\Psalm\Report::TYPE_CONSOLE, \Psalm\Report::TYPE_PHP_STORM])) {
+                        if (in_array($output_format, [Report::TYPE_CONSOLE, Report::TYPE_PHP_STORM])) {
                             fwrite(
                                 STDERR,
                                 'Could not locate a config XML file in path ' . $current_dir
@@ -503,14 +512,14 @@ HELP;
                         throw $e;
                     }
 
-                    $config = \Psalm\Config\Creator::createBareConfig(
+                    $config = Creator::createBareConfig(
                         $current_dir,
                         null,
                         self::getVendorDir($current_dir)
                     );
                 }
             }
-        } catch (\Psalm\Exception\ConfigException $e) {
+        } catch (ConfigException $e) {
             fwrite(
                 STDERR,
                 $e->getMessage() . PHP_EOL
@@ -621,5 +630,37 @@ HELP;
         }
 
         return (int)$limit;
+    }
+
+    public static function initPhpVersion(array $options, Config $config, ProjectAnalyzer $project_analyzer): void
+    {
+        $source = null;
+
+        if (isset($options['php-version'])) {
+            if (!is_string($options['php-version'])) {
+                die('Expecting a version number in the format x.y' . PHP_EOL);
+            }
+            $version = $options['php-version'];
+            $source = 'cli';
+        } elseif ($version = $config->getPhpVersionFromConfig()) {
+            $source = 'config';
+        } elseif ($version = $config->getPHPVersionFromComposerJson()) {
+            $source = 'composer';
+        }
+
+        if ($version !== null && $source !== null) {
+            $project_analyzer->setPhpVersion($version, $source);
+        }
+    }
+
+    public static function runningInCI(): bool
+    {
+        return isset($_SERVER['TRAVIS'])
+            || isset($_SERVER['CIRCLECI'])
+            || isset($_SERVER['APPVEYOR'])
+            || isset($_SERVER['JENKINS_URL'])
+            || isset($_SERVER['SCRUTINIZER'])
+            || isset($_SERVER['GITLAB_CI'])
+            || isset($_SERVER['GITHUB_WORKFLOW']);
     }
 }

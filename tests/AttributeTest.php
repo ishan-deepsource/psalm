@@ -1,10 +1,13 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class AttributeTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -180,6 +183,48 @@ class AttributeTest extends TestCase
                         class Baz {}
                     }
                 '
+            ],
+            'returnTypeWillChange7.1' => [
+                '<?php
+
+                    namespace Rabus\PsalmReturnTypeWillChange;
+
+                    use EmptyIterator;
+                    use IteratorAggregate;
+                    use ReturnTypeWillChange;
+
+                    final class EmptyCollection implements IteratorAggregate
+                    {
+                        #[ReturnTypeWillChange]
+                        public function getIterator()
+                        {
+                            return new EmptyIterator();
+                        }
+                    }',
+                [],
+                [],
+                '7.1'
+            ],
+            'returnTypeWillChange8.1' => [
+                '<?php
+
+                    namespace Rabus\PsalmReturnTypeWillChange;
+
+                    use EmptyIterator;
+                    use IteratorAggregate;
+                    use ReturnTypeWillChange;
+
+                    final class EmptyCollection implements IteratorAggregate
+                    {
+                        #[ReturnTypeWillChange]
+                        public function getIterator()
+                        {
+                            return new EmptyIterator();
+                        }
+                    }',
+                [],
+                [],
+                '8.1'
             ]
         ];
     }

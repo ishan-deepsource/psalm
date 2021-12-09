@@ -1,13 +1,19 @@
 <?php
 namespace Psalm;
 
+use Psalm\Internal\Analyzer\FileAnalyzer;
 use Psalm\Internal\Analyzer\IssueData;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\ExecutionEnvironment\BuildInfoCollector;
+use Psalm\Internal\ExecutionEnvironment\GitInfoCollector;
+use Psalm\Internal\Provider\FileProvider;
 use Psalm\Issue\CodeIssue;
 use Psalm\Issue\ConfigIssue;
+use Psalm\Issue\MixedIssue;
+use Psalm\Issue\TaintedInput;
 use Psalm\Issue\UnusedPsalmSuppress;
 use Psalm\Plugin\EventHandler\Event\AfterAnalysisEvent;
+use Psalm\Report;
 use Psalm\Report\CheckstyleReport;
 use Psalm\Report\CodeClimateReport;
 use Psalm\Report\CompactReport;
@@ -19,16 +25,22 @@ use Psalm\Report\JsonSummaryReport;
 use Psalm\Report\JunitReport;
 use Psalm\Report\PhpStormReport;
 use Psalm\Report\PylintReport;
+use Psalm\Report\ReportOptions;
 use Psalm\Report\SarifReport;
 use Psalm\Report\SonarqubeReport;
 use Psalm\Report\TextReport;
 use Psalm\Report\XmlReport;
+use RuntimeException;
+use UnexpectedValueException;
 
+use function array_keys;
 use function array_merge;
 use function array_pop;
 use function array_search;
 use function array_splice;
+use function array_sum;
 use function array_values;
+use function arsort;
 use function count;
 use function debug_print_backtrace;
 use function dirname;
@@ -36,22 +48,30 @@ use function explode;
 use function file_put_contents;
 use function fwrite;
 use function get_class;
+use function implode;
 use function in_array;
 use function is_dir;
+use function is_int;
+use function ksort;
 use function memory_get_peak_usage;
 use function microtime;
 use function mkdir;
 use function number_format;
 use function ob_get_clean;
 use function ob_start;
+use function preg_match;
+use function round;
 use function sha1;
 use function sprintf;
 use function str_repeat;
 use function str_replace;
+use function strlen;
+use function strpos;
 use function trim;
 use function usort;
 
 use const DEBUG_BACKTRACE_IGNORE_ARGS;
+use const PSALM_VERSION;
 use const STDERR;
 
 class IssueBuffer
@@ -101,8 +121,8 @@ class IssueBuffer
     private static $server = [];
 
     /**
-     * @param   string[]  $suppressed_issues
-     *
+     * This will add an issue to be emitted if it's not suppressed and return if it has been added
+     * @param string[]  $suppressed_issues
      */
     public static function accepts(CodeIssue $e, array $suppressed_issues = [], bool $is_fixable = false): bool
     {
@@ -113,9 +133,25 @@ class IssueBuffer
         return self::add($e, $is_fixable);
     }
 
-    public static function addUnusedSuppression(string $file_path, int $offset, string $issue_type) : void
+    /**
+     * This will add an issue to be emitted if it's not suppressed
+     * @param string[]  $suppressed_issues
+     */
+    public static function maybeAdd(CodeIssue $e, array $suppressed_issues = [], bool $is_fixable = false): void
     {
-        if (\strpos($issue_type, 'Tainted') === 0) {
+        if (self::isSuppressed($e, $suppressed_issues)) {
+            return;
+        }
+
+        self::add($e, $is_fixable);
+    }
+
+    /**
+     * This is part of the findUnusedPsalmSuppress feature
+     */
+    public static function addUnusedSuppression(string $file_path, int $offset, string $issue_type): void
+    {
+        if (strpos($issue_type, 'Tainted') === 0) {
             return;
         }
 
@@ -127,14 +163,17 @@ class IssueBuffer
             self::$unused_suppressions[$file_path] = [];
         }
 
-        self::$unused_suppressions[$file_path][$offset] = $offset + \strlen($issue_type) - 1;
+        self::$unused_suppressions[$file_path][$offset] = $offset + strlen($issue_type) - 1;
     }
 
     /**
-     * @param   string[]  $suppressed_issues
-     *
+     * This will return false if an issue is ready to be added for emission. Reasons for not returning false include:
+     * - The issue is suppressed in config
+     * - We're in a recording state
+     * - The issue is included in the list of issues to be suppressed in param
+     * @param string[] $suppressed_issues
      */
-    public static function isSuppressed(CodeIssue $e, array $suppressed_issues = []) : bool
+    public static function isSuppressed(CodeIssue $e, array $suppressed_issues = []): bool
     {
         $config = Config::getInstance();
 
@@ -149,7 +188,7 @@ class IssueBuffer
         $suppressed_issue_position = array_search($issue_type, $suppressed_issues);
 
         if ($suppressed_issue_position !== false) {
-            if (\is_int($suppressed_issue_position)) {
+            if (is_int($suppressed_issue_position)) {
                 self::$used_suppressions[$file_path][$suppressed_issue_position] = true;
             }
 
@@ -162,7 +201,7 @@ class IssueBuffer
             $suppressed_issue_position = array_search($parent_issue_type, $suppressed_issues);
 
             if ($suppressed_issue_position !== false) {
-                if (\is_int($suppressed_issue_position)) {
+                if (is_int($suppressed_issue_position)) {
                     self::$used_suppressions[$file_path][$suppressed_issue_position] = true;
                 }
 
@@ -173,7 +212,7 @@ class IssueBuffer
         $suppress_all_position = array_search('all', $suppressed_issues);
 
         if ($suppress_all_position !== false) {
-            if (\is_int($suppress_all_position)) {
+            if (is_int($suppress_all_position)) {
                 self::$used_suppressions[$file_path][$suppress_all_position] = true;
             }
 
@@ -200,6 +239,7 @@ class IssueBuffer
     }
 
     /**
+     * Add an issue to be emitted
      * @throws  Exception\CodeException
      */
     public static function add(CodeIssue $e, bool $is_fixable = false): bool
@@ -215,7 +255,7 @@ class IssueBuffer
             return false;
         }
 
-        $is_tainted = \strpos($issue_type, 'Tainted') === 0;
+        $is_tainted = strpos($issue_type, 'Tainted') === 0;
 
         if ($project_analyzer->getCodebase()->taint_flow_graph && !$is_tainted) {
             return false;
@@ -234,7 +274,13 @@ class IssueBuffer
             fwrite(STDERR, "\nEmitting {$e->getShortLocation()} $issue_type {$e->message}\n$trace\n");
         }
 
+        // Make issue type for trace variable specific ("Trace" => "Trace~$var").
+        $trace_var = $issue_type === 'Trace' && preg_match('/^(\$.+?):/', $e->message, $m) === 1 && isset($m[1])
+            ? '~' . $m[1]
+            : '';
+
         $emitted_key = $issue_type
+            . $trace_var
             . '-' . $e->getShortLocation()
             . ':' . $e->code_location->getColumn()
             . ' ' . $e->dupe_key;
@@ -252,11 +298,11 @@ class IssueBuffer
         }
 
         if ($config->throw_exception) {
-            \Psalm\Internal\Analyzer\FileAnalyzer::clearCache();
+            FileAnalyzer::clearCache();
 
-            $message = $e instanceof \Psalm\Issue\TaintedInput
+            $message = $e instanceof TaintedInput
                 ? $e->getJourneyMessage()
-                : ($e instanceof \Psalm\Issue\MixedIssue
+                : ($e instanceof MixedIssue
                     ? $e->getMixedOriginMessage()
                     : $e->message);
 
@@ -280,7 +326,10 @@ class IssueBuffer
         return true;
     }
 
-    public static function remove(string $file_path, string $issue_type, int $file_offset) : void
+    /**
+     * This will try to remove an issue that has been added for emission
+     */
+    public static function remove(string $file_path, string $issue_type, int $file_offset): void
     {
         if (!isset(self::$issues_data[$file_path])) {
             return;
@@ -301,7 +350,7 @@ class IssueBuffer
         }
     }
 
-    public static function addFixableIssue(string $issue_type) : void
+    public static function addFixableIssue(string $issue_type): void
     {
         if (isset(self::$fixable_issue_counts[$issue_type])) {
             self::$fixable_issue_counts[$issue_type]++;
@@ -337,7 +386,7 @@ class IssueBuffer
     /**
      * @param array<string, int> $fixable_issue_counts
      */
-    public static function addFixableIssues(array $fixable_issue_counts) : void
+    public static function addFixableIssues(array $fixable_issue_counts): void
     {
         foreach ($fixable_issue_counts as $issue_type => $count) {
             if (isset(self::$fixable_issue_counts[$issue_type])) {
@@ -351,7 +400,7 @@ class IssueBuffer
     /**
      * @return array<string, array<int, int>>
      */
-    public static function getUnusedSuppressions() : array
+    public static function getUnusedSuppressions(): array
     {
         return self::$unused_suppressions;
     }
@@ -359,7 +408,7 @@ class IssueBuffer
     /**
      * @return array<string, array<int, bool>>
      */
-    public static function getUsedSuppressions() : array
+    public static function getUsedSuppressions(): array
     {
         return self::$used_suppressions;
     }
@@ -367,7 +416,7 @@ class IssueBuffer
     /**
      * @param array<string, array<int, int>> $unused_suppressions
      */
-    public static function addUnusedSuppressions(array $unused_suppressions) : void
+    public static function addUnusedSuppressions(array $unused_suppressions): void
     {
         self::$unused_suppressions += $unused_suppressions;
     }
@@ -375,7 +424,7 @@ class IssueBuffer
     /**
      * @param array<string, array<int, bool>> $used_suppressions
      */
-    public static function addUsedSuppressions(array $used_suppressions) : void
+    public static function addUsedSuppressions(array $used_suppressions): void
     {
         foreach ($used_suppressions as $file => $offsets) {
             if (!isset(self::$used_suppressions[$file])) {
@@ -386,7 +435,7 @@ class IssueBuffer
         }
     }
 
-    public static function processUnusedSuppressions(\Psalm\Internal\Provider\FileProvider $file_provider) : void
+    public static function processUnusedSuppressions(FileProvider $file_provider): void
     {
         $config = Config::getInstance();
 
@@ -460,7 +509,7 @@ class IssueBuffer
         array $issue_baseline = []
     ): void {
         if (!$project_analyzer->stdout_report_options) {
-            throw new \UnexpectedValueException('Cannot finish without stdout report options');
+            throw new UnexpectedValueException('Cannot finish without stdout report options');
         }
 
         $codebase = $project_analyzer->getCodebase();
@@ -480,17 +529,17 @@ class IssueBuffer
         if (self::$issues_data) {
             if (in_array(
                 $project_analyzer->stdout_report_options->format,
-                [\Psalm\Report::TYPE_CONSOLE, \Psalm\Report::TYPE_PHP_STORM]
+                [Report::TYPE_CONSOLE, Report::TYPE_PHP_STORM]
             )) {
                 echo "\n";
             }
 
-            \ksort(self::$issues_data);
+            ksort(self::$issues_data);
 
             foreach (self::$issues_data as $file_path => $file_issues) {
                 usort(
                     $file_issues,
-                    function (IssueData $d1, IssueData $d2) : int {
+                    function (IssueData $d1, IssueData $d2): int {
                         if ($d1->file_path === $d2->file_path) {
                             if ($d1->line_from === $d2->line_from) {
                                 if ($d1->column_from === $d2->column_from) {
@@ -570,8 +619,8 @@ class IssueBuffer
             $build_info = (new BuildInfoCollector(self::$server))->collect();
 
             try {
-                $source_control_info = (new \Psalm\Internal\ExecutionEnvironment\GitInfoCollector())->collect();
-            } catch (\RuntimeException $e) {
+                $source_control_info = (new GitInfoCollector())->collect();
+            } catch (RuntimeException $e) {
                 // do nothing
             }
 
@@ -588,12 +637,12 @@ class IssueBuffer
 
         foreach ($project_analyzer->generated_report_options as $report_options) {
             if (!$report_options->output_path) {
-                throw new \UnexpectedValueException('Output path should not be null here');
+                throw new UnexpectedValueException('Output path should not be null here');
             }
 
             $folder = dirname($report_options->output_path);
             if (!is_dir($folder) && !mkdir($folder, 0777, true) && !is_dir($folder)) {
-                throw new \RuntimeException(sprintf('Directory "%s" was not created', $folder));
+                throw new RuntimeException(sprintf('Directory "%s" was not created', $folder));
             }
             file_put_contents(
                 $report_options->output_path,
@@ -607,7 +656,7 @@ class IssueBuffer
 
         if (in_array(
             $project_analyzer->stdout_report_options->format,
-            [\Psalm\Report::TYPE_CONSOLE, \Psalm\Report::TYPE_PHP_STORM]
+            [Report::TYPE_CONSOLE, Report::TYPE_PHP_STORM]
         )) {
             echo str_repeat('-', 30) . "\n";
 
@@ -639,8 +688,8 @@ class IssueBuffer
             if (self::$fixable_issue_counts && $show_suggestions && !$codebase->taint_flow_graph) {
                 echo str_repeat('-', 30) . "\n";
 
-                $total_count = \array_sum(self::$fixable_issue_counts);
-                $command = '--alter --issues=' . \implode(',', \array_keys(self::$fixable_issue_counts));
+                $total_count = array_sum(self::$fixable_issue_counts);
+                $command = '--alter --issues=' . implode(',', array_keys(self::$fixable_issue_counts));
                 $command .= ' --dry-run';
 
                 echo 'Psalm can automatically fix ' . $total_count
@@ -674,7 +723,7 @@ class IssueBuffer
 
                     $function_timings = $codebase->analyzer->getFunctionTimings();
 
-                    \arsort($function_timings);
+                    arsort($function_timings);
 
                     $i = 0;
 
@@ -683,7 +732,7 @@ class IssueBuffer
                             break;
                         }
 
-                        echo $function_id . ': ' . \round(1000 * $time, 2) . 'ms per node' . "\n";
+                        echo $function_id . ': ' . round(1000 * $time, 2) . 'ms per node' . "\n";
                     }
 
                     echo "\n";
@@ -695,7 +744,7 @@ class IssueBuffer
             $codebase->file_reference_provider->removeDeletedFilesFromReferences();
 
             if ($project_analyzer->project_cache_provider) {
-                $project_analyzer->project_cache_provider->processSuccessfulRun($start_time, \PSALM_VERSION);
+                $project_analyzer->project_cache_provider->processSuccessfulRun($start_time, PSALM_VERSION);
             }
 
             if ($codebase->statements_provider->parser_cache_provider) {
@@ -719,7 +768,7 @@ class IssueBuffer
      */
     public static function getOutput(
         array $issues_data,
-        \Psalm\Report\ReportOptions $report_options,
+        ReportOptions $report_options,
         array $mixed_counts = [0, 0]
     ): string {
         $total_expression_count = $mixed_counts[0] + $mixed_counts[1];
@@ -835,33 +884,44 @@ class IssueBuffer
         return $current_data;
     }
 
+    /**
+     * Return whether or not we're in a recording state regarding startRecording/stopRecording status
+     */
     public static function isRecording(): bool
     {
         return self::$recording_level > 0;
     }
 
+    /**
+     * Increase the recording level in order to start recording issues instead of adding them while in a loop
+     */
     public static function startRecording(): void
     {
         ++self::$recording_level;
         self::$recorded_issues[self::$recording_level] = [];
     }
 
+    /**
+     * Decrease the recording level after leaving a loop
+     * @see startRecording
+     */
     public static function stopRecording(): void
     {
         if (self::$recording_level === 0) {
-            throw new \UnexpectedValueException('Cannot stop recording - already at base level');
+            throw new UnexpectedValueException('Cannot stop recording - already at base level');
         }
 
         --self::$recording_level;
     }
 
     /**
+     * This will return the recorded issues for the current recording level
      * @return array<int, CodeIssue>
      */
     public static function clearRecordingLevel(): array
     {
         if (self::$recording_level === 0) {
-            throw new \UnexpectedValueException('Not currently recording');
+            throw new UnexpectedValueException('Not currently recording');
         }
 
         $recorded_issues = self::$recorded_issues[self::$recording_level];
@@ -871,6 +931,9 @@ class IssueBuffer
         return $recorded_issues;
     }
 
+    /**
+     * This will try to add issues that has been retrieved through clearRecordingLevel or record them at a lower level
+     */
     public static function bubbleUp(CodeIssue $e): void
     {
         if (self::$recording_level === 0) {

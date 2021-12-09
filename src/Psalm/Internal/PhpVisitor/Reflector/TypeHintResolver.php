@@ -8,8 +8,10 @@ use Psalm\Internal\Codebase\Scanner as CodebaseScanner;
 use Psalm\Storage\ClassLikeStorage;
 use Psalm\Storage\FileStorage;
 use Psalm\Type;
+use UnexpectedValueException;
 
 use function implode;
+use function reset;
 use function strtolower;
 
 class TypeHintResolver
@@ -25,12 +27,12 @@ class TypeHintResolver
         Aliases $aliases,
         int $php_major_version,
         int $php_minor_version
-    ) : Type\Union {
+    ): Type\Union {
         if ($hint instanceof PhpParser\Node\UnionType) {
             $type = null;
 
             if (!$hint->types) {
-                throw new \UnexpectedValueException('bad');
+                throw new UnexpectedValueException('bad');
             }
 
             foreach ($hint->types as $atomic_typehint) {
@@ -95,7 +97,7 @@ class TypeHintResolver
 
         if ($type_string) {
             $atomic_types = $type->getAtomicTypes();
-            $atomic_type = \reset($atomic_types);
+            $atomic_type = reset($atomic_types);
             $atomic_type->text = $type_string;
         }
 

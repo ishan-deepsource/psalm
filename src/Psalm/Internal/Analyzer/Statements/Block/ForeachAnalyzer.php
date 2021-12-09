@@ -9,7 +9,9 @@ use Psalm\Exception\DocblockParseException;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\ClassLikeNameOptions;
 use Psalm\Internal\Analyzer\CommentAnalyzer;
+use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\AssignmentAnalyzer;
+use Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ArrayFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\VariableFetchAnalyzer;
@@ -18,6 +20,7 @@ use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\FileManipulation\FileManipulationBuffer;
 use Psalm\Internal\Scope\LoopScope;
 use Psalm\Internal\Type\Comparator\AtomicTypeComparator;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\ImpureMethodCall;
 use Psalm\Issue\InvalidDocblock;
 use Psalm\Issue\InvalidIterator;
@@ -32,6 +35,7 @@ use Psalm\IssueBuffer;
 use Psalm\Node\Expr\VirtualMethodCall;
 use Psalm\Node\VirtualIdentifier;
 use Psalm\Type;
+use UnexpectedValueException;
 
 use function array_intersect_key;
 use function array_keys;
@@ -41,6 +45,7 @@ use function array_search;
 use function array_values;
 use function in_array;
 use function is_string;
+use function reset;
 use function strtolower;
 
 /**
@@ -74,14 +79,12 @@ class ForeachAnalyzer
                     $type_aliases
                 );
             } catch (DocblockParseException $e) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InvalidDocblock(
                         $e->getMessage(),
                         new CodeLocation($statements_analyzer, $stmt)
                     )
-                )) {
-                    // fall through
-                }
+                );
             }
         }
 
@@ -125,7 +128,7 @@ class ForeachAnalyzer
                 continue;
             }
 
-            $comment_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+            $comment_type = TypeExpander::expandUnion(
                 $codebase,
                 $var_comment->type,
                 $context->self,
@@ -288,7 +291,7 @@ class ForeachAnalyzer
                 continue;
             }
 
-            $comment_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+            $comment_type = TypeExpander::expandUnion(
                 $codebase,
                 $var_comment->type,
                 $context->self,
@@ -323,7 +326,7 @@ class ForeachAnalyzer
         }
 
         if (!$inner_loop_context) {
-            throw new \UnexpectedValueException('There should be an inner loop context');
+            throw new UnexpectedValueException('There should be an inner loop context');
         }
 
         $foreach_context->loop_scope = null;
@@ -374,29 +377,25 @@ class ForeachAnalyzer
         }
 
         if ($iterator_type->isNullable() && !$iterator_type->ignore_nullable_issues) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new PossiblyNullIterator(
                     'Cannot iterate over nullable var ' . $iterator_type,
                     new CodeLocation($statements_analyzer->getSource(), $expr)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
 
             return null;
         }
 
         if ($iterator_type->isFalsable() && !$iterator_type->ignore_falsable_issues) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new PossiblyFalseIterator(
                     'Cannot iterate over falsable var ' . $iterator_type,
                     new CodeLocation($statements_analyzer->getSource(), $expr)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
 
             return null;
         }
@@ -502,22 +501,20 @@ class ForeachAnalyzer
 
                 if (!$context->pure) {
                     if ($statements_analyzer->getSource()
-                            instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                            instanceof FunctionLikeAnalyzer
                         && $statements_analyzer->getSource()->track_mutations
                     ) {
                         $statements_analyzer->getSource()->inferred_has_mutation = true;
                         $statements_analyzer->getSource()->inferred_impure = true;
                     }
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ImpureMethodCall(
                             'Cannot call a possibly-mutating iterator from a pure context',
                             new CodeLocation($statements_analyzer, $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             } elseif ($iterator_atomic_type instanceof Type\Atomic\TIterable) {
                 if ($iterator_atomic_type->extra_types) {
@@ -564,7 +561,7 @@ class ForeachAnalyzer
                 }
 
                 if (!$intersection_value_type || !$intersection_key_type) {
-                    throw new \UnexpectedValueException('Should not happen');
+                    throw new UnexpectedValueException('Should not happen');
                 }
 
                 $value_type = Type::combineUnionTypes($value_type, $intersection_value_type);
@@ -582,22 +579,20 @@ class ForeachAnalyzer
 
                 if (!$context->pure) {
                     if ($statements_analyzer->getSource()
-                            instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                            instanceof FunctionLikeAnalyzer
                         && $statements_analyzer->getSource()->track_mutations
                     ) {
                         $statements_analyzer->getSource()->inferred_has_mutation = true;
                         $statements_analyzer->getSource()->inferred_impure = true;
                     }
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ImpureMethodCall(
                             'Cannot call a possibly-mutating Traversable::getIterator from a pure context',
                             new CodeLocation($statements_analyzer, $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             } elseif ($iterator_atomic_type instanceof Type\Atomic\TNamedObject) {
                 if ($iterator_atomic_type->value !== 'Traversable' &&
@@ -637,71 +632,61 @@ class ForeachAnalyzer
 
                 if (!$context->pure) {
                     if ($statements_analyzer->getSource()
-                            instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                            instanceof FunctionLikeAnalyzer
                         && $statements_analyzer->getSource()->track_mutations
                     ) {
                         $statements_analyzer->getSource()->inferred_has_mutation = true;
                         $statements_analyzer->getSource()->inferred_impure = true;
                     }
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ImpureMethodCall(
                             'Cannot call a possibly-mutating iterator from a pure context',
                             new CodeLocation($statements_analyzer, $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
         }
 
         if ($raw_object_types) {
             if ($has_valid_iterator) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossibleRawObjectIteration(
-                        'Possibly undesired iteration over regular object ' . \reset($raw_object_types),
+                        'Possibly undesired iteration over regular object ' . reset($raw_object_types),
                         new CodeLocation($statements_analyzer->getSource(), $expr)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new RawObjectIteration(
-                        'Possibly undesired iteration over regular object ' . \reset($raw_object_types),
+                        'Possibly undesired iteration over regular object ' . reset($raw_object_types),
                         new CodeLocation($statements_analyzer->getSource(), $expr)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
 
         if ($invalid_iterator_types) {
             if ($has_valid_iterator) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyInvalidIterator(
                         'Cannot iterate over ' . $invalid_iterator_types[0],
                         new CodeLocation($statements_analyzer->getSource(), $expr)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InvalidIterator(
                         'Cannot iterate over ' . $invalid_iterator_types[0],
                         new CodeLocation($statements_analyzer->getSource(), $expr)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
 
@@ -731,7 +716,7 @@ class ForeachAnalyzer
             if ($iterator_atomic_type instanceof Type\Atomic\TTemplateParam
                 || $iterator_atomic_type instanceof Type\Atomic\TObjectWithProperties
             ) {
-                throw new \UnexpectedValueException('Shouldn’t get a generic param here');
+                throw new UnexpectedValueException('Shouldn’t get a generic param here');
             }
 
 
@@ -800,7 +785,7 @@ class ForeachAnalyzer
 
                     $context->inside_call = true;
 
-                    \Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer::analyze(
+                    MethodCallAnalyzer::analyze(
                         $statements_analyzer,
                         $fake_method_call,
                         $context
@@ -994,7 +979,7 @@ class ForeachAnalyzer
                     : array_values(
                         array_map(
                             /** @param array<string, Type\Union> $arr */
-                            function (array $arr) use ($iterator_atomic_type) : Type\Union {
+                            function (array $arr) use ($iterator_atomic_type): Type\Union {
                                 return $arr[$iterator_atomic_type->value] ?? Type::getMixed();
                             },
                             $generic_storage->template_types
@@ -1031,7 +1016,7 @@ class ForeachAnalyzer
         PhpParser\Node\Expr $foreach_expr,
         Context $context,
         string $method_name
-    ) : ?Type\Union {
+    ): ?Type\Union {
         $old_data_provider = $statements_analyzer->node_data;
 
         $statements_analyzer->node_data = clone $statements_analyzer->node_data;
@@ -1055,7 +1040,7 @@ class ForeachAnalyzer
 
         $context->inside_call = true;
 
-        \Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer::analyze(
+        MethodCallAnalyzer::analyze(
             $statements_analyzer,
             $fake_method_call,
             $context

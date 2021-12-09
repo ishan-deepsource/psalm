@@ -8,6 +8,7 @@ use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\VariableFetchAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\DataFlow\DataFlowNode;
+use Psalm\Internal\ReferenceConstraint;
 use Psalm\Issue\InvalidGlobal;
 use Psalm\IssueBuffer;
 
@@ -20,17 +21,15 @@ class GlobalAnalyzer
         PhpParser\Node\Stmt\Global_ $stmt,
         Context $context,
         ?Context $global_context
-    ) : void {
+    ): void {
         if (!$context->collect_initializations && !$global_context) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new InvalidGlobal(
                     'Cannot use global scope here',
                     new CodeLocation($statements_analyzer, $stmt)
                 ),
                 $statements_analyzer->getSource()->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         }
 
         $source = $statements_analyzer->getSource();
@@ -56,7 +55,7 @@ class GlobalAnalyzer
 
                         $context->vars_possibly_in_scope[$var_id] = true;
 
-                        $context->byref_constraints[$var_id] = new \Psalm\Internal\ReferenceConstraint();
+                        $context->byref_constraints[$var_id] = new ReferenceConstraint();
                     }
                     $assignment_node = DataFlowNode::getForAssignment(
                         $var_id,

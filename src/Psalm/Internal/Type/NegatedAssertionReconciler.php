@@ -34,7 +34,6 @@ class NegatedAssertionReconciler extends Reconciler
      * @param  array<string, array<string, Type\Union>> $template_type_map
      * @param  string[]   $suppressed_issues
      * @param  0|1|2      $failed_reconciliation
-     *
      */
     public static function reconcile(
         StatementsAnalyzer $statements_analyzer,
@@ -86,17 +85,16 @@ class NegatedAssertionReconciler extends Reconciler
                 if (!$existing_var_type->isNullable()
                     && $key
                     && strpos($key, '[') === false
-                    && $key !== '$_SESSION'
                 ) {
                     foreach ($existing_var_type->getAtomicTypes() as $atomic) {
                         if (!$existing_var_type->hasMixed()
                             || $atomic instanceof Type\Atomic\TNonEmptyMixed
                         ) {
-                            $failed_reconciliation = 2;
+                            $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
                             if ($code_location) {
                                 if ($existing_var_type->from_static_property) {
-                                    if (IssueBuffer::accepts(
+                                    IssueBuffer::maybeAdd(
                                         new RedundantPropertyInitializationCheck(
                                             'Static property ' . $key . ' with type '
                                                 . $existing_var_type
@@ -104,22 +102,18 @@ class NegatedAssertionReconciler extends Reconciler
                                             $code_location
                                         ),
                                         $suppressed_issues
-                                    )) {
-                                        // fall through
-                                    }
+                                    );
                                 } elseif ($existing_var_type->from_property) {
-                                    if (IssueBuffer::accepts(
+                                    IssueBuffer::maybeAdd(
                                         new RedundantPropertyInitializationCheck(
                                             'Property ' . $key . ' with type '
                                                 . $existing_var_type . ' should already be set in the constructor',
                                             $code_location
                                         ),
                                         $suppressed_issues
-                                    )) {
-                                        // fall through
-                                    }
+                                    );
                                 } elseif ($existing_var_type->from_docblock) {
-                                    if (IssueBuffer::accepts(
+                                    IssueBuffer::maybeAdd(
                                         new DocblockTypeContradiction(
                                             'Cannot resolve types for ' . $key . ' with docblock-defined type '
                                                 . $existing_var_type . ' and !isset assertion',
@@ -127,11 +121,9 @@ class NegatedAssertionReconciler extends Reconciler
                                             null
                                         ),
                                         $suppressed_issues
-                                    )) {
-                                        // fall through
-                                    }
+                                    );
                                 } else {
-                                    if (IssueBuffer::accepts(
+                                    IssueBuffer::maybeAdd(
                                         new TypeDoesNotContainType(
                                             'Cannot resolve types for ' . $key . ' with type '
                                                 . $existing_var_type . ' and !isset assertion',
@@ -139,9 +131,7 @@ class NegatedAssertionReconciler extends Reconciler
                                             null
                                         ),
                                         $suppressed_issues
-                                    )) {
-                                        // fall through
-                                    }
+                                    );
                                 }
                             }
 
@@ -188,7 +178,7 @@ class NegatedAssertionReconciler extends Reconciler
                             );
                         }
 
-                        $failed_reconciliation = 2;
+                        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
                     }
                 }
 
@@ -380,7 +370,7 @@ class NegatedAssertionReconciler extends Reconciler
                 }
             }
 
-            $failed_reconciliation = 2;
+            $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
             return new Type\Union([new Type\Atomic\TEmptyMixed]);
         }

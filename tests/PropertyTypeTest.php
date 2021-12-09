@@ -1,20 +1,24 @@
 <?php
 namespace Psalm\Tests;
 
+use DateTime;
 use Psalm\Config;
 use Psalm\Context;
+use Psalm\Exception\CodeException;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 use const DIRECTORY_SEPARATOR;
 
 class PropertyTypeTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     public function testForgetPropertyAssignments(): void
     {
         $this->expectExceptionMessage('NullableReturnStatement');
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         Config::getInstance()->remember_property_assignments_after_call = false;
 
         $this->addFile(
@@ -193,7 +197,7 @@ class PropertyTypeTest extends TestCase
         Config::getInstance()->remember_property_assignments_after_call = false;
 
         $this->expectExceptionMessage('TypeDoesNotContainNull - somefile.php:22:29');
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
 
         $this->addFile(
             'somefile.php',
@@ -231,7 +235,7 @@ class PropertyTypeTest extends TestCase
         Config::getInstance()->remember_property_assignments_after_call = false;
 
         $this->expectExceptionMessage('TypeDoesNotContainNull - somefile.php:18:29');
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
 
         $this->addFile(
             'somefile.php',
@@ -287,7 +291,7 @@ class PropertyTypeTest extends TestCase
 
     public function testUniversalObjectCrates(): void
     {
-        Config::getInstance()->addUniversalObjectCrate(\DateTime::class);
+        Config::getInstance()->addUniversalObjectCrate(DateTime::class);
 
         $this->addFile(
             'somefile.php',
@@ -410,7 +414,7 @@ class PropertyTypeTest extends TestCase
                         public $foo = "";
                     }
 
-                    $a = rand(0, 10) ? new A(): (rand(0, 10) ? new B(): null);
+                    $a = rand(0, 10) ? new A(): (rand(0, 10) ? new B() : null);
                     $b = null;
 
                     if ($a instanceof A || $a instanceof B) {
@@ -431,7 +435,7 @@ class PropertyTypeTest extends TestCase
                         public $foo = "";
                     }
 
-                    $a = rand(0, 10) ? new A(): new B();
+                    $a = rand(0, 10) ? new A() : new B();
                     if (rand(0, 1)) {
                         $a = null;
                     }
@@ -459,7 +463,7 @@ class PropertyTypeTest extends TestCase
                         public $bb;
                     }
 
-                    $b = rand(0, 10) ? new A(): new B();
+                    $b = rand(0, 10) ? new A() : new B();
 
                     if ($b instanceof B && isset($b->bb) && $b->bb->aa === "aa") {
                         echo $b->bb->aa;
@@ -2755,7 +2759,7 @@ class PropertyTypeTest extends TestCase
                         public $foo = "";
                     }
 
-                    $a = rand(0, 10) ? new Foo(): null;
+                    $a = rand(0, 10) ? new Foo() : null;
 
                     $a->foo = "hello";',
                 'error_message' => 'PossiblyNullPropertyAssignment',
@@ -2774,7 +2778,7 @@ class PropertyTypeTest extends TestCase
                         public $foo = "";
                     }
 
-                    $a = rand(0, 10) ? new Foo(): null;
+                    $a = rand(0, 10) ? new Foo() : null;
 
                     echo $a->foo;',
                 'error_message' => 'PossiblyNullPropertyFetch',

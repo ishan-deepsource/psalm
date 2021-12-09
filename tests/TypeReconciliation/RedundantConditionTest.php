@@ -1,12 +1,16 @@
 <?php
 namespace Psalm\Tests\TypeReconciliation;
 
+use Psalm\Tests\TestCase;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 use const DIRECTORY_SEPARATOR;
 
-class RedundantConditionTest extends \Psalm\Tests\TestCase
+class RedundantConditionTest extends TestCase
 {
-    use \Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
-    use \Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -867,7 +871,19 @@ class RedundantConditionTest extends \Psalm\Tests\TestCase
 
                     }
                     '
-            ]
+            ],
+            'countWithNeverValuesInKeyedArray' => [
+                '<?php
+                    /** @var non-empty-array $report_data */
+                    $report_data = [];
+                    if ( array_key_exists( "A", $report_data ) ) {
+                    } elseif ( !empty( $report_data[0]["type"] ) && rand(0,1) ) {
+                        if ( rand(0,1) ) {}
+
+                        if ( count( $report_data ) === 1 ) {
+                        }
+                    }'
+            ],
         ];
     }
 

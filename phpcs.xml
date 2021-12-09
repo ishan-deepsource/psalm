@@ -4,50 +4,152 @@
     xsi:noNamespaceSchemaLocation="vendor/squizlabs/php_codesniffer/phpcs.xsd"
     name="Psalm coding standard"
 >
+    <description>The coding standard for Psalm.</description>
+
+    <!-- **************************************************************************************************************
+      *  Configuration                                                                                                *
+      ************************************************************************************************************** -->
+
+    <config name="php_version" value="70100"/>
     <config name="installed_paths" value="../../slevomat/coding-standard"/>
-    <rule ref="PSR2" />
-    <!-- Forbid usage of a function or a class constant via fallback global name -->
-    <rule ref="SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly">
-        <properties>
-            <property name="allowFallbackGlobalConstants" value="false"/>
-            <property name="allowFallbackGlobalFunctions" value="false"/>
-            <property name="allowFullyQualifiedGlobalConstants" value="true"/>
-            <property name="allowFullyQualifiedGlobalFunctions" value="true"/>
-            <property name="allowFullyQualifiedGlobalClasses" value="true"/>
-        </properties>
-        <exclude name="SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly.ReferenceViaFullyQualifiedName"/>
-    </rule>
 
-    <rule ref="Generic.Files.LineLength">
-        <exclude-pattern>tests</exclude-pattern>
-        <exclude-pattern>src/Psalm/Internal/Type/TemplateStandinTypeReplacer.php</exclude-pattern>
-    </rule>
-    <rule ref="PSR2.Namespaces.UseDeclaration">
-        <exclude-pattern>*</exclude-pattern>
-    </rule>
+    <arg name="basepath" value="."/>
 
-    <rule ref="SlevomatCodingStandard.Namespaces.UnusedUses">
-        <properties>
-            <property name="searchAnnotations" value="true"/>
-        </properties>
-    </rule>
-    <rule ref="SlevomatCodingStandard.Namespaces.AlphabeticallySortedUses">
-        <properties>
-            <property name="caseSensitive" value="true" />
-        </properties>
-    </rule>
-    <rule ref="SlevomatCodingStandard.Namespaces.UseSpacing">
-        <properties>
-            <property name="linesCountBetweenUseTypes" value="1" />
-        </properties>
-    </rule>
+    <!-- **************************************************************************************************************
+      *  Files to include/exclude                                                                                     *
+      ************************************************************************************************************** -->
+
     <file>bin/</file>
     <file>src/</file>
     <file>tests/</file>
 
     <exclude-pattern>src/Psalm/Internal/Visitor/SimpleNameResolver.php</exclude-pattern>
-
     <!-- These are just examples and stub classes/files, so it doesn't really matter if they're PSR-2 compliant. -->
     <exclude-pattern>src/Psalm/Internal/Stubs/</exclude-pattern>
     <exclude-pattern>tests/fixtures/</exclude-pattern>
+
+
+    <!-- **************************************************************************************************************
+      *  STANDARD:  Generic                                                                                           *
+      ************************************************************************************************************** -->
+
+    <!--
+        Restrict line length.
+        https://github.com/squizlabs/PHP_CodeSniffer/blob/master/src/Standards/Generic/Docs/Files/LineLengthStandard.xml
+     -->
+    <rule ref="Generic.Files.LineLength">
+        <exclude-pattern>tests</exclude-pattern>
+        <exclude-pattern>src/Psalm/Internal/Type/TemplateStandinTypeReplacer.php</exclude-pattern>
+    </rule>
+
+
+    <!-- **************************************************************************************************************
+      *  STANDARD:  PSR2                                                                                              *
+      ************************************************************************************************************** -->
+
+    <rule ref="PSR2"/>
+
+    <!--
+        Namespace Declarations.
+        https://github.com/squizlabs/PHP_CodeSniffer/blob/master/src/Standards/PSR2/Docs/Namespaces/UseDeclarationStandard.xml
+     -->
+    <rule ref="PSR2.Namespaces.UseDeclaration">
+        <exclude-pattern>*</exclude-pattern>
+    </rule>
+
+
+    <!-- **************************************************************************************************************
+      *  STANDARD:  Squiz                                                                                             *
+      ************************************************************************************************************** -->
+
+    <!--
+        The self keyword should be used instead of the current class name.
+        https://github.com/squizlabs/PHP_CodeSniffer/blob/master/src/Standards/Squiz/Docs/Classes/SelfMemberReferenceStandard.xml
+     -->
+    <rule ref="Squiz.Classes.SelfMemberReference"/>
+
+
+    <!-- **************************************************************************************************************
+      *  STANDARD:  SlevomatCodingStandard                                                                            *
+      ************************************************************************************************************** -->
+
+    <!--
+        Handle imports from namespaces.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesreferenceusednamesonly-
+     -->
+    <rule ref="SlevomatCodingStandard.Namespaces.ReferenceUsedNamesOnly">
+        <properties>
+            <property name="allowFullyQualifiedExceptions" type="bool" value="false"/>
+            <property name="allowFullyQualifiedGlobalFunctions" type="bool" value="false"/>
+            <property name="allowFullyQualifiedGlobalConstants" type="bool" value="false"/>
+            <property name="allowFullyQualifiedGlobalClasses" type="bool" value="false"/>
+
+			<property name="allowFullyQualifiedNameForCollidingClasses" type="bool" value="false"/>
+			<property name="allowFullyQualifiedNameForCollidingFunctions" type="bool" value="false"/>
+			<property name="allowFullyQualifiedNameForCollidingConstants" type="bool" value="false"/>
+
+			<property name="allowFallbackGlobalFunctions" type="bool" value="false"/>
+			<property name="allowFallbackGlobalConstants" type="bool" value="false"/>
+
+            <property name="allowPartialUses" type="bool" value="true"/>
+
+			<property name="searchAnnotations" type="bool" value="true"/>
+        </properties>
+    </rule>
+
+    <!--
+        Looks for unused imports from other namespaces.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesunuseduses-
+     -->
+    <rule ref="SlevomatCodingStandard.Namespaces.UnusedUses">
+        <properties>
+            <property name="searchAnnotations" value="true"/>
+        </properties>
+    </rule>
+
+    <!--
+        Checks whether uses at the top of a file are alphabetically sorted.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesalphabeticallysorteduses-
+     -->
+    <rule ref="SlevomatCodingStandard.Namespaces.AlphabeticallySortedUses">
+        <properties>
+            <property name="caseSensitive" value="true"/>
+        </properties>
+    </rule>
+
+    <!--
+        Enforces configurable number of lines before/after/between use.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardnamespacesusespacing-
+     -->
+    <rule ref="SlevomatCodingStandard.Namespaces.UseSpacing">
+        <properties>
+            <property name="linesCountBetweenUseTypes" value="1"/>
+        </properties>
+    </rule>
+
+    <!--
+        Checks for missing return typehints and useless @return annotations.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardtypehintsreturntypehint-
+     -->
+    <rule ref="SlevomatCodingStandard.TypeHints.ReturnTypeHint">
+        <properties>
+			<property name="enableObjectTypeHint" type="bool" value="false"/>
+			<property name="enableStaticTypeHint" type="bool" value="false"/>
+			<property name="enableMixedTypeHint" type="bool" value="false"/>
+			<property name="enableUnionTypeHint" type="bool" value="false"/>
+        </properties>
+
+        <exclude name="SlevomatCodingStandard.TypeHints.ReturnTypeHint.MissingTraversableTypeHintSpecification"/>
+    </rule>
+
+    <!--
+        Enforces consistent formatting of return typehints.
+        https://github.com/slevomat/coding-standard#slevomatcodingstandardtypehintsreturntypehintspacing-
+     -->
+    <rule ref="SlevomatCodingStandard.TypeHints.ReturnTypeHintSpacing">
+        <properties>
+            <property name="spacesCountBeforeColon" value="0"/>
+        </properties>
+    </rule>
+
 </ruleset>

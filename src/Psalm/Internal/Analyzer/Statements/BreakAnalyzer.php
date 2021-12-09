@@ -7,20 +7,22 @@ use Psalm\Internal\Analyzer\ScopeAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Type;
 
+use function end;
+
 class BreakAnalyzer
 {
     public static function analyze(
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Stmt\Break_ $stmt,
         Context $context
-    ) : void {
+    ): void {
         $loop_scope = $context->loop_scope;
 
         $leaving_switch = true;
 
         if ($loop_scope) {
             if ($context->break_types
-                && \end($context->break_types) === 'switch'
+                && end($context->break_types) === 'switch'
                 && (!$stmt->num instanceof PhpParser\Node\Scalar\LNumber || $stmt->num->value < 2)
             ) {
                 $loop_scope->final_actions[] = ScopeAnalyzer::ACTION_LEAVE_SWITCH;

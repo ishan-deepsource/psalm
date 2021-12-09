@@ -1,10 +1,13 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class TypeAnnotationTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -425,6 +428,25 @@ class TypeAnnotationTest extends TestCase
                      * @implements A<Foo>
                      */
                     class C implements A {}',
+            ],
+            'importedTypeAliasAsConstrainedTypeParameterForImplementation' => [
+                '<?php
+                    namespace Bar;
+
+                    /** @template T of string */
+                    interface A {}
+
+                    /**
+                     * @psalm-type Foo = "foo"
+                     */
+                    class B {}
+
+                    /**
+                     * @psalm-import-type Foo from B
+                     * @implements A<Foo>
+                     */
+                    class C implements A {}
+                '
             ],
             'importedTypeAliasAsTypeParameterForExtendedClass' => [
                 '<?php

@@ -2,6 +2,7 @@
 namespace Psalm\Internal\PluginManager;
 
 use DOMDocument;
+use DomElement;
 use Psalm\Config;
 use RuntimeException;
 
@@ -12,7 +13,6 @@ use function substr;
 
 class ConfigFile
 {
-    public const NS = 'https://getpsalm.org/schema/config';
     /** @var string */
     private $path;
 
@@ -48,7 +48,7 @@ class ConfigFile
     public function removePlugin(string $plugin_class): void
     {
         $config_xml = $this->readXml();
-        /** @var \DomElement */
+        /** @var DomElement */
         $psalm_root = $config_xml->getElementsByTagName('psalm')[0];
         $plugins_elements = $psalm_root->getElementsByTagName('plugins');
         if (!$plugins_elements->length) {
@@ -56,7 +56,7 @@ class ConfigFile
             return;
         }
 
-        /** @var \DomElement */
+        /** @var DomElement */
         $plugins_element = $plugins_elements->item(0);
 
         $plugin_elements = $plugins_element->getElementsByTagName('pluginClass');
@@ -79,7 +79,7 @@ class ConfigFile
     public function addPlugin(string $plugin_class): void
     {
         $config_xml = $this->readXml();
-        /** @var \DomElement */
+        /** @var DomElement */
         $psalm_root = $config_xml->getElementsByTagName('psalm')->item(0);
         $plugins_elements = $psalm_root->getElementsByTagName('plugins');
         if (!$plugins_elements->length) {
@@ -88,13 +88,13 @@ class ConfigFile
                 $psalm_root->appendChild($plugins_element);
             }
         } else {
-            /** @var \DomElement */
+            /** @var DomElement */
             $plugins_element = $plugins_elements->item(0);
         }
 
         $plugin_class_element = $config_xml->createElement('pluginClass');
         if ($plugin_class_element) {
-            $plugin_class_element->setAttribute('xmlns', self::NS);
+            $plugin_class_element->setAttribute('xmlns', Config::CONFIG_NAMESPACE);
             $plugin_class_element->setAttribute('class', $plugin_class);
             if ($plugins_element) {
                 $plugins_element->appendChild($plugin_class_element);

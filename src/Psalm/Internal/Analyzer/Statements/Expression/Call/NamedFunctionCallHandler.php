@@ -3,15 +3,22 @@ namespace Psalm\Internal\Analyzer\Statements\Expression\Call;
 
 use PhpParser;
 use Psalm\CodeLocation;
+use Psalm\Codebase;
 use Psalm\Context;
+use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\AssertionFinder;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ConstFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Codebase\VariableUseGraph;
 use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Issue\ForbiddenCode;
+use Psalm\Issue\PossibleRawObjectIteration;
+use Psalm\Issue\RawObjectIteration;
+use Psalm\Issue\RedundantCast;
+use Psalm\Issue\RedundantCastGivenDocblockType;
 use Psalm\IssueBuffer;
 use Psalm\Node\Expr\VirtualArray;
 use Psalm\Node\Expr\VirtualArrayItem;
@@ -22,8 +29,10 @@ use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Reconciler;
 
 use function array_map;
+use function array_values;
 use function extension_loaded;
 use function implode;
+use function in_array;
 use function is_string;
 use function strpos;
 use function strtolower;
@@ -38,13 +47,13 @@ class NamedFunctionCallHandler
      */
     public static function handle(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\FuncCall $stmt,
         PhpParser\Node\Expr\FuncCall $real_stmt,
         PhpParser\Node\Name $function_name,
         ?string $function_id,
         Context $context
-    ) : void {
+    ): void {
         if ($function_id === 'get_class'
             || $function_id === 'gettype'
             || $function_id === 'get_debug_type'
@@ -120,7 +129,7 @@ class NamedFunctionCallHandler
             return;
         }
 
-        if (\in_array($function_id, ['is_file', 'file_exists']) && $first_arg) {
+        if (in_array($function_id, ['is_file', 'file_exists']) && $first_arg) {
             $var_id = ExpressionIdentifier::getArrayVarId($first_arg->value, null);
 
             if ($var_id) {
@@ -223,8 +232,8 @@ class NamedFunctionCallHandler
         if ($function_id === 'func_get_args') {
             $source = $statements_analyzer->getSource();
 
-            if ($source instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer) {
-                if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph) {
+            if ($source instanceof FunctionLikeAnalyzer) {
+                if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph) {
                     foreach ($source->param_nodes as $param_node) {
                         $statements_analyzer->data_flow_graph->addPath(
                             $param_node,
@@ -241,27 +250,23 @@ class NamedFunctionCallHandler
         if ($function_id === 'var_dump'
             || $function_id === 'shell_exec'
         ) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new ForbiddenCode(
                     'Unsafe ' . implode('', $function_name->parts),
                     new CodeLocation($statements_analyzer->getSource(), $stmt)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // continue
-            }
+            );
         }
 
         if (isset($codebase->config->forbidden_functions[strtolower((string) $function_name)])) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new ForbiddenCode(
                     'You have forbidden the use of ' . $function_name,
                     new CodeLocation($statements_analyzer->getSource(), $stmt)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // continue
-            }
+            );
 
             return;
         }
@@ -342,7 +347,7 @@ class NamedFunctionCallHandler
 
             foreach ($anded_assertions as $assertions) {
                 $referenced_var_ids = array_map(
-                    function (array $_) : bool {
+                    function (array $_): bool {
                         return true;
                     },
                     $assertions
@@ -364,6 +369,35 @@ class NamedFunctionCallHandler
             return;
         }
 
+        if ($first_arg && $function_id === 'array_values') {
+            $first_arg_type = $statements_analyzer->node_data->getType($first_arg->value);
+
+            if ($first_arg_type
+                && UnionTypeComparator::isContainedBy(
+                    $codebase,
+                    $first_arg_type,
+                    Type::getList()
+                )
+            ) {
+                if ($first_arg_type->from_docblock) {
+                    IssueBuffer::maybeAdd(
+                        new RedundantCastGivenDocblockType(
+                            'The call to array_values is unnecessary given the list docblock type '.$first_arg_type,
+                            new CodeLocation($statements_analyzer, $function_name)
+                        ),
+                        $statements_analyzer->getSuppressedIssues()
+                    );
+                } else {
+                    IssueBuffer::maybeAdd(
+                        new RedundantCast(
+                            'The call to array_values is unnecessary, '.$first_arg_type.' is already a list',
+                            new CodeLocation($statements_analyzer, $function_name)
+                        ),
+                        $statements_analyzer->getSuppressedIssues()
+                    );
+                }
+            }
+        }
         if ($first_arg && $function_id === 'strtolower') {
             $first_arg_type = $statements_analyzer->node_data->getType($first_arg->value);
 
@@ -375,25 +409,21 @@ class NamedFunctionCallHandler
                 )
             ) {
                 if ($first_arg_type->from_docblock) {
-                    if (IssueBuffer::accepts(
-                        new \Psalm\Issue\RedundantCastGivenDocblockType(
+                    IssueBuffer::maybeAdd(
+                        new RedundantCastGivenDocblockType(
                             'The call to strtolower is unnecessary given the docblock type',
                             new CodeLocation($statements_analyzer, $function_name)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
-                        new \Psalm\Issue\RedundantCast(
+                    IssueBuffer::maybeAdd(
+                        new RedundantCast(
                             'The call to strtolower is unnecessary',
                             new CodeLocation($statements_analyzer, $function_name)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
         }
@@ -407,23 +437,19 @@ class NamedFunctionCallHandler
 
             if ($first_arg_type && $first_arg_type->hasObjectType()) {
                 if ($first_arg_type->isSingle()) {
-                    if (IssueBuffer::accepts(
-                        new \Psalm\Issue\RawObjectIteration(
+                    IssueBuffer::maybeAdd(
+                        new RawObjectIteration(
                             'Possibly undesired iteration over object properties',
                             new CodeLocation($statements_analyzer, $function_name)
                         )
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
-                        new \Psalm\Issue\PossibleRawObjectIteration(
+                    IssueBuffer::maybeAdd(
+                        new PossibleRawObjectIteration(
                             'Possibly undesired iteration over object properties',
                             new CodeLocation($statements_analyzer, $function_name)
                         )
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
         }
@@ -435,7 +461,7 @@ class NamedFunctionCallHandler
         PhpParser\Node\Expr\FuncCall $real_stmt,
         string $function_id,
         Context $context
-    ) : void {
+    ): void {
         $first_arg = $stmt->getArgs()[0] ?? null;
 
         if ($first_arg) {
@@ -481,7 +507,7 @@ class NamedFunctionCallHandler
                     } elseif ($class_type instanceof Type\Atomic\TTemplateParam
                         && $class_type->as->isSingle()
                     ) {
-                        $as_atomic_type = \array_values($class_type->as->getAtomicTypes())[0];
+                        $as_atomic_type = array_values($class_type->as->getAtomicTypes())[0];
 
                         if ($as_atomic_type instanceof Type\Atomic\TObject) {
                             $class_string_types[] = new Type\Atomic\TTemplateParamClass(

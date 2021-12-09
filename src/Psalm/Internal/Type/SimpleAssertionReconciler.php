@@ -4,6 +4,9 @@ namespace Psalm\Internal\Type;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Exception\TypeParseTreeException;
+use Psalm\Internal\Codebase\ClassConstantByWildcardResolver;
+use Psalm\Internal\Codebase\InternalCallMapHandler;
+use Psalm\Internal\Type\TypeCombiner;
 use Psalm\Type;
 use Psalm\Type\Atomic;
 use Psalm\Type\Atomic\Scalar;
@@ -40,6 +43,7 @@ use Psalm\Type\Atomic\TResource;
 use Psalm\Type\Atomic\TScalar;
 use Psalm\Type\Atomic\TString;
 use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Reconciler;
 use Psalm\Type\Union;
 
 use function assert;
@@ -56,7 +60,7 @@ use function substr;
  * the known type using the assertion. For example: old type is `int` assertion is `>5` result is `int<6, max>`.
  * Complex reconciliation takes part in AssertionReconciler if this class couldn't handle the reconciliation
  */
-class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
+class SimpleAssertionReconciler extends Reconciler
 {
     /**
      * @param   string[]  $suppressed_issues
@@ -70,11 +74,11 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         bool $negated = false,
         ?CodeLocation $code_location = null,
         array $suppressed_issues = [],
-        int &$failed_reconciliation = 0,
+        int &$failed_reconciliation = Reconciler::RECONCILIATION_OK,
         bool $is_equality = false,
         bool $is_strict_equality = false,
         bool $inside_loop = false
-    ) : ?Type\Union {
+    ): ?Type\Union {
         if ($assertion === 'mixed' && $existing_var_type->hasMixed()) {
             return $existing_var_type;
         }
@@ -419,6 +423,15 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             );
         }
 
+        if (substr($assertion, 0, 15) === 'class-constant(') {
+            return self::reconcileClassConstant(
+                $codebase,
+                substr($assertion, 15, -1),
+                $existing_var_type,
+                $failed_reconciliation
+            );
+        }
+
         if ($existing_var_type->isSingle()
             && $existing_var_type->hasTemplate()
             && strpos($assertion, '-') === false
@@ -453,14 +466,13 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         int &$failed_reconciliation,
         bool $is_equality,
         bool $inside_loop
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         // if key references an array offset
         $did_remove_type = ($key && strpos($key, '['))
             || !$existing_var_type->initialized
             || $existing_var_type->possibly_undefined
-            || $key === '$_SESSION'
             || $existing_var_type->ignore_isset;
 
         if ($existing_var_type->isNullable()) {
@@ -487,7 +499,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             );
 
             if (empty($existing_var_type->getAtomicTypes())) {
-                $failed_reconciliation = 2;
+                $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
                 return Type::getEmpty();
             }
         }
@@ -519,7 +531,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         int &$failed_reconciliation,
         bool $is_equality,
         ?int $min_count
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         if ($existing_var_type->hasType('array')) {
@@ -598,7 +610,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
     private static function reconcileExactlyCountable(
         Union $existing_var_type,
         int $count
-    ) : Union {
+    ): Union {
         if ($existing_var_type->hasType('array')) {
             $array_atomic_type = $existing_var_type->getAtomicTypes()['array'];
 
@@ -640,7 +652,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         $did_remove_type = false;
@@ -701,7 +713,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($positive_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return Type::getEmpty();
     }
@@ -719,7 +731,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         ?CodeLocation $code_location,
         array $suppressed_issues,
         int &$failed_reconciliation
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
 
@@ -806,7 +818,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($object_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return Type::getMixed();
     }
@@ -824,7 +836,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         int &$failed_reconciliation,
         bool $is_equality,
         bool $is_strict_equality
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
 
@@ -898,7 +910,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($string_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return $existing_var_type->from_docblock
             ? Type::getMixed()
@@ -918,7 +930,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         int &$failed_reconciliation,
         bool $is_equality,
         bool $is_strict_equality
-    ) : Union {
+    ): Union {
         if ($existing_var_type->hasMixed()) {
             if ($is_equality && !$is_strict_equality) {
                 return $existing_var_type;
@@ -996,7 +1008,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($int_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return $existing_var_type->from_docblock
             ? Type::getMixed()
@@ -1015,7 +1027,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         if ($existing_var_type->hasMixed()) {
             return Type::getBool();
         }
@@ -1075,7 +1087,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($bool_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return $existing_var_type->from_docblock
             ? Type::getMixed()
@@ -1094,7 +1106,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         if ($existing_var_type->hasMixed()) {
             return Type::getScalar();
         }
@@ -1150,7 +1162,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($scalar_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return $existing_var_type->from_docblock
             ? Type::getMixed()
@@ -1169,7 +1181,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         if ($existing_var_type->hasMixed()) {
             return Type::getNumeric();
         }
@@ -1242,7 +1254,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($numeric_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return $existing_var_type->from_docblock
             ? Type::getMixed()
@@ -1261,7 +1273,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         if ($existing_var_type->hasMixed()) {
             return Type::getObject();
         }
@@ -1335,7 +1347,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($object_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return $existing_var_type->from_docblock
             ? Type::getMixed()
@@ -1354,7 +1366,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         if ($existing_var_type->hasMixed()) {
             return Type::getResource();
         }
@@ -1392,7 +1404,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($resource_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return $existing_var_type->from_docblock
             ? Type::getMixed()
@@ -1412,7 +1424,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
@@ -1463,7 +1475,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($iterable_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return Type::getMixed();
     }
@@ -1481,7 +1493,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
@@ -1523,7 +1535,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($iterable_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return Type::getMixed();
     }
@@ -1541,7 +1553,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         ?CodeLocation $code_location,
         array $suppressed_issues,
         int &$failed_reconciliation
-    ) : Union {
+    ): Union {
         try {
             $new_var_type = Type::parseString($assertion);
         } catch (TypeParseTreeException $e) {
@@ -1567,7 +1579,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                 );
             }
 
-            $failed_reconciliation = 2;
+            $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
             return Type::getMixed();
         }
@@ -1578,7 +1590,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
     private static function reconcileHasArrayKey(
         Union $existing_var_type,
         string $assertion
-    ) : Union {
+    ): Union {
         foreach ($existing_var_type->getAtomicTypes() as $atomic_type) {
             if ($atomic_type instanceof Type\Atomic\TKeyedArray) {
                 $is_class_string = false;
@@ -1607,7 +1619,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         Union $existing_var_type,
         string $assertion,
         bool $inside_loop
-    ) : Union {
+    ): Union {
         $assertion_value = (int)$assertion;
         foreach ($existing_var_type->getAtomicTypes() as $atomic_type) {
             if ($inside_loop) {
@@ -1626,8 +1638,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                 }
                 $existing_var_type->addType($atomic_type);
             } elseif ($atomic_type instanceof Atomic\TLiteralInt) {
-                $new_range = new Atomic\TIntRange($assertion_value, null);
-                if (!$new_range->contains($atomic_type->value)) {
+                if ($atomic_type->value < $assertion_value) {
                     $existing_var_type->removeType($atomic_type->getKey());
                 } /*elseif ($inside_loop) {
                     //when inside a loop, allow the range to extends the type
@@ -1639,11 +1650,10 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                     }
                 }*/
             } elseif ($atomic_type instanceof Atomic\TPositiveInt) {
-                if ($assertion_value <= 0) {
-                    //emit an issue here in the future about incompatible type
+                if ($assertion_value > 1) {
+                    $existing_var_type->removeType($atomic_type->getKey());
+                    $existing_var_type->addType(new Atomic\TIntRange($assertion_value, null));
                 }
-                $existing_var_type->removeType($atomic_type->getKey());
-                $existing_var_type->addType(new Atomic\TIntRange($assertion_value, null));
             } elseif ($atomic_type instanceof TInt) {
                 $existing_var_type->removeType($atomic_type->getKey());
                 $existing_var_type->addType(new Atomic\TIntRange($assertion_value, null));
@@ -1657,7 +1667,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         Union $existing_var_type,
         string $assertion,
         bool $inside_loop
-    ) : Union {
+    ): Union {
         $assertion_value = (int)$assertion;
         foreach ($existing_var_type->getAtomicTypes() as $atomic_type) {
             if ($inside_loop) {
@@ -1673,10 +1683,9 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                 }
                 $existing_var_type->addType($atomic_type);
             } elseif ($atomic_type instanceof Atomic\TLiteralInt) {
-                $new_range = new Atomic\TIntRange(null, $assertion_value);
-                if (!$new_range->contains($atomic_type->value)) {
+                if ($atomic_type->value > $assertion_value) {
                     $existing_var_type->removeType($atomic_type->getKey());
-                }/* elseif ($inside_loop) {
+                } /* elseif ($inside_loop) {
                     //when inside a loop, allow the range to extends the type
                     $existing_var_type->removeType($atomic_type->getKey());
                     if ($atomic_type->value < $assertion_value) {
@@ -1686,11 +1695,10 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                     }
                 }*/
             } elseif ($atomic_type instanceof Atomic\TPositiveInt) {
-                if ($assertion_value <= 0) {
-                    //emit an issue here in the future about incompatible type
-                }
                 $existing_var_type->removeType($atomic_type->getKey());
-                $existing_var_type->addType(new Atomic\TIntRange(1, $assertion_value));
+                if ($assertion_value >= 1) {
+                    $existing_var_type->addType(new Atomic\TIntRange(1, $assertion_value));
+                }
             } elseif ($atomic_type instanceof TInt) {
                 $existing_var_type->removeType($atomic_type->getKey());
                 $existing_var_type->addType(new Atomic\TIntRange(null, $assertion_value));
@@ -1713,7 +1721,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
@@ -1764,7 +1772,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($traversable_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return $existing_var_type->from_docblock
             ? Type::getMixed()
@@ -1783,7 +1791,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
@@ -1850,16 +1858,16 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                 );
 
                 if (!$did_remove_type) {
-                    $failed_reconciliation = 1;
+                    $failed_reconciliation = Reconciler::RECONCILIATION_REDUNDANT;
                 }
             }
         }
 
         if ($array_types) {
-            return \Psalm\Internal\Type\TypeCombiner::combine($array_types);
+            return TypeCombiner::combine($array_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return $existing_var_type->from_docblock
             ? Type::getMixed()
@@ -1879,7 +1887,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         int &$failed_reconciliation,
         bool $is_equality,
         bool $is_non_empty
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
@@ -1955,16 +1963,16 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                 );
 
                 if (!$did_remove_type) {
-                    $failed_reconciliation = 1;
+                    $failed_reconciliation = Reconciler::RECONCILIATION_REDUNDANT;
                 }
             }
         }
 
         if ($array_types) {
-            return \Psalm\Internal\Type\TypeCombiner::combine($array_types);
+            return TypeCombiner::combine($array_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return $existing_var_type->from_docblock
             ? Type::getMixed()
@@ -1984,7 +1992,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $inside_loop
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
@@ -2031,7 +2039,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
             return new Type\Union($array_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return Type::getMixed($inside_loop);
     }
@@ -2049,7 +2057,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $inside_loop
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         $existing_var_atomic_types = $existing_var_type->getAtomicTypes();
@@ -2088,10 +2096,10 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         }
 
         if ($array_types) {
-            return \Psalm\Internal\Type\TypeCombiner::combine($array_types);
+            return TypeCombiner::combine($array_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return Type::getMixed($inside_loop);
     }
@@ -2109,7 +2117,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $is_equality
-    ) : Union {
+    ): Union {
         if ($existing_var_type->hasMixed()) {
             return Type::parseString('callable');
         }
@@ -2139,7 +2147,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
                 $callable_types[] = new Type\Atomic\TCallableString();
                 $did_remove_type = true;
             } elseif (get_class($type) === Type\Atomic\TLiteralString::class
-                && \Psalm\Internal\Codebase\InternalCallMapHandler::inCallMap($type->value)
+                && InternalCallMapHandler::inCallMap($type->value)
             ) {
                 $callable_types[] = $type;
                 $did_remove_type = true;
@@ -2198,10 +2206,10 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         }
 
         if ($callable_types) {
-            return \Psalm\Internal\Type\TypeCombiner::combine($callable_types);
+            return TypeCombiner::combine($callable_types);
         }
 
-        $failed_reconciliation = 2;
+        $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
 
         return Type::getMixed();
     }
@@ -2219,7 +2227,7 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         array $suppressed_issues,
         int &$failed_reconciliation,
         bool $recursive_check
-    ) : Union {
+    ): Union {
         $old_var_type_string = $existing_var_type->getId();
 
         $did_remove_type = $existing_var_type->possibly_undefined
@@ -2386,5 +2394,34 @@ class SimpleAssertionReconciler extends \Psalm\Type\Reconciler
         /** @psalm-suppress RedundantCondition safety check in case we removed something that shouldn't be removed */
         assert($existing_var_type->getAtomicTypes() !== []);
         return $existing_var_type;
+    }
+
+    /**
+     * @param   0|1|2    $failed_reconciliation
+     */
+    private static function reconcileClassConstant(
+        Codebase $codebase,
+        string $class_constant_expression,
+        Union $existing_type,
+        int &$failed_reconciliation
+    ): Union {
+        if (strpos($class_constant_expression, '::') === false) {
+            return $existing_type;
+        }
+
+        [$class_name, $constant_pattern] = explode('::', $class_constant_expression, 2);
+
+        $resolver = new ClassConstantByWildcardResolver($codebase);
+        $matched_class_constant_types = $resolver->resolve($class_name, $constant_pattern);
+        if ($matched_class_constant_types === null) {
+            return $existing_type;
+        }
+
+        if ($matched_class_constant_types === []) {
+            $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
+            return Type::getMixed();
+        }
+
+        return TypeCombiner::combine($matched_class_constant_types, $codebase);
     }
 }

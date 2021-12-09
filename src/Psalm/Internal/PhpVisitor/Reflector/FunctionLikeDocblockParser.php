@@ -156,23 +156,26 @@ class FunctionLikeDocblockParser
             }
         }
 
-        if (isset($parsed_docblock->tags['psalm-self-out'])) {
-            foreach ($parsed_docblock->tags['psalm-self-out'] as $offset => $param) {
-                $line_parts = CommentAnalyzer::splitDocLine($param);
+        foreach (['psalm-self-out', 'psalm-this-out'] as $alias) {
+            if (isset($parsed_docblock->tags[$alias])) {
+                foreach ($parsed_docblock->tags[$alias] as $offset => $param) {
+                    $line_parts = CommentAnalyzer::splitDocLine($param);
 
-                if (count($line_parts) > 0) {
-                    $line_parts[0] = str_replace("\n", '', preg_replace('@^[ \t]*\*@m', '', $line_parts[0]));
+                    if (count($line_parts) > 0) {
+                        $line_parts[0] = str_replace("\n", '', preg_replace('@^[ \t]*\*@m', '', $line_parts[0]));
 
-                    $info->self_out = [
-                        'type' => str_replace("\n", '', $line_parts[0]),
-                        'line_number' => $comment->getStartLine() + substr_count(
-                            $comment_text,
-                            "\n",
-                            0,
-                            $offset - $comment->getStartFilePos()
-                        ),
-                    ];
+                        $info->self_out = [
+                            'type' => str_replace("\n", '', $line_parts[0]),
+                            'line_number' => $comment->getStartLine() + substr_count(
+                                $comment_text,
+                                "\n",
+                                0,
+                                $offset - $comment->getStartFilePos()
+                            ),
+                        ];
+                    }
                 }
+                break;
             }
         }
 
@@ -204,7 +207,7 @@ class FunctionLikeDocblockParser
             foreach ($parsed_docblock->tags['psalm-taint-sink'] as $param) {
                 $param_parts = preg_split('/\s+/', trim($param));
 
-                if (count($param_parts) === 2) {
+                if (count($param_parts) >= 2) {
                     $info->taint_sink_params[] = ['name' => $param_parts[1], 'taint' => $param_parts[0]];
                 }
             }

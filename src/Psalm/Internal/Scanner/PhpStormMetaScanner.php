@@ -3,6 +3,7 @@ namespace Psalm\Internal\Scanner;
 
 use PhpParser;
 use Psalm\Codebase;
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
 use Psalm\Plugin\EventHandler\Event\MethodReturnTypeProviderEvent;
 use Psalm\Type;
@@ -109,7 +110,7 @@ class PhpStormMetaScanner
                         $call_args = $event->getCallArgs();
                         $method_name = $event->getMethodNameLowercase();
                         $fq_classlike_name = $event->getFqClasslikeName();
-                        if (!$statements_analyzer instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+                        if (!$statements_analyzer instanceof StatementsAnalyzer) {
                             return Type::getMixed();
                         }
 
@@ -164,7 +165,7 @@ class PhpStormMetaScanner
                         $call_args = $event->getCallArgs();
                         $method_name = $event->getMethodNameLowercase();
                         $fq_classlike_name = $event->getFqClasslikeName();
-                        if (!$statements_analyzer instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+                        if (!$statements_analyzer instanceof StatementsAnalyzer) {
                             return Type::getMixed();
                         }
 
@@ -201,7 +202,7 @@ class PhpStormMetaScanner
                         $call_args = $event->getCallArgs();
                         $method_name = $event->getMethodNameLowercase();
                         $fq_classlike_name = $event->getFqClasslikeName();
-                        if (!$statements_analyzer instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+                        if (!$statements_analyzer instanceof StatementsAnalyzer) {
                             return Type::getMixed();
                         }
 
@@ -260,11 +261,11 @@ class PhpStormMetaScanner
                     ) use (
                         $map,
                         $offset
-                    ) : Type\Union {
+                    ): Type\Union {
                         $statements_analyzer = $event->getStatementsSource();
                         $call_args = $event->getCallArgs();
                         $function_id = $event->getFunctionId();
-                        if (!$statements_analyzer instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+                        if (!$statements_analyzer instanceof StatementsAnalyzer) {
                             return Type::getMixed();
                         }
 
@@ -313,11 +314,11 @@ class PhpStormMetaScanner
                         FunctionReturnTypeProviderEvent $event
                     ) use (
                         $type_offset
-                    ) : Type\Union {
+                    ): Type\Union {
                         $statements_analyzer = $event->getStatementsSource();
                         $call_args = $event->getCallArgs();
                         $function_id = $event->getFunctionId();
-                        if (!$statements_analyzer instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+                        if (!$statements_analyzer instanceof StatementsAnalyzer) {
                             return Type::getMixed();
                         }
 
@@ -347,11 +348,11 @@ class PhpStormMetaScanner
                         FunctionReturnTypeProviderEvent $event
                     ) use (
                         $element_type_offset
-                    ) : Type\Union {
+                    ): Type\Union {
                         $statements_analyzer = $event->getStatementsSource();
                         $call_args = $event->getCallArgs();
                         $function_id = $event->getFunctionId();
-                        if (!$statements_analyzer instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+                        if (!$statements_analyzer instanceof StatementsAnalyzer) {
                             return Type::getMixed();
                         }
 

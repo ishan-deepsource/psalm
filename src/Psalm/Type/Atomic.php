@@ -2,6 +2,7 @@
 namespace Psalm\Type;
 
 use Psalm\Codebase;
+use Psalm\Exception\TypeParseTreeException;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TypeAlias;
@@ -91,9 +92,9 @@ abstract class Atomic implements TypeNode
     public $text;
 
     /**
-     * @param  array{int,int}|null   $php_version
-     * @param  array<string, array<string, Union>> $template_type_map
-     * @param  array<string, TypeAlias> $type_aliases
+     * @param array{int,int}|null $php_version contains php version when the type comes from signature
+     * @param array<string, array<string, Union>> $template_type_map
+     * @param array<string, TypeAlias> $type_aliases
      */
     public static function create(
         string $value,
@@ -289,11 +290,11 @@ abstract class Atomic implements TypeNode
         }
 
         if (strpos($value, '-') && strpos($value, 'OCI-') !== 0) {
-            throw new \Psalm\Exception\TypeParseTreeException('Unrecognized type ' . $value);
+            throw new TypeParseTreeException('Unrecognized type ' . $value);
         }
 
         if (is_numeric($value[0])) {
-            throw new \Psalm\Exception\TypeParseTreeException('First character of type cannot be numeric');
+            throw new TypeParseTreeException('First character of type cannot be numeric');
         }
 
         if (isset($template_type_map[$value])) {
@@ -313,13 +314,13 @@ abstract class Atomic implements TypeNode
                 return new TTypeAlias($type_alias->declaring_fq_classlike_name, $type_alias->alias_name);
             }
 
-            throw new \Psalm\Exception\TypeParseTreeException('Invalid type alias ' . $value . ' provided');
+            throw new TypeParseTreeException('Invalid type alias ' . $value . ' provided');
         }
 
         return new TNamedObject($value);
     }
 
-    abstract public function getKey(bool $include_extra = true) : string;
+    abstract public function getKey(bool $include_extra = true): string;
 
     public function isNumericType(): bool
     {
@@ -327,7 +328,7 @@ abstract class Atomic implements TypeNode
             || $this instanceof TFloat
             || $this instanceof TNumericString
             || $this instanceof TNumeric
-            || ($this instanceof TLiteralString && \is_numeric($this->value));
+            || ($this instanceof TLiteralString && is_numeric($this->value));
     }
 
     public function isObjectType(): bool
@@ -397,7 +398,7 @@ abstract class Atomic implements TypeNode
                     $this->extra_types
                     && array_filter(
                         $this->extra_types,
-                        function (Atomic $a) use ($codebase) : bool {
+                        function (Atomic $a) use ($codebase): bool {
                             return $a->hasTraversableInterface($codebase);
                         }
                     )
@@ -422,7 +423,7 @@ abstract class Atomic implements TypeNode
                     $this->extra_types
                     && array_filter(
                         $this->extra_types,
-                        function (Atomic $a) use ($codebase) : bool {
+                        function (Atomic $a) use ($codebase): bool {
                             return $a->hasCountableInterface($codebase);
                         }
                     )
@@ -463,7 +464,7 @@ abstract class Atomic implements TypeNode
                     $this->extra_types
                     && array_filter(
                         $this->extra_types,
-                        function (Atomic $a) use ($codebase) : bool {
+                        function (Atomic $a) use ($codebase): bool {
                             return $a->hasArrayAccessInterface($codebase);
                         }
                     )
@@ -471,12 +472,12 @@ abstract class Atomic implements TypeNode
             );
     }
 
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return [];
     }
 
-    public function replaceClassLike(string $old, string $new) : void
+    public function replaceClassLike(string $old, string $new): void
     {
         if ($this instanceof TNamedObject) {
             if (strtolower($this->value) === $old) {
@@ -619,14 +620,14 @@ abstract class Atomic implements TypeNode
         bool $replace = true,
         bool $add_lower_bound = false,
         int $depth = 0
-    ) : self {
+    ): self {
         return $this;
     }
 
     public function replaceTemplateTypesWithArgTypes(
         TemplateResult $template_result,
         ?Codebase $codebase
-    ) : void {
+    ): void {
         // do nothing
     }
 

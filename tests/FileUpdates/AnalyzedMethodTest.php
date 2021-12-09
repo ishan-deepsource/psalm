@@ -1,10 +1,14 @@
 <?php
 namespace Psalm\Tests\FileUpdates;
 
+use Psalm\Config;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\Provider\FakeFileProvider;
 use Psalm\Internal\Provider\Providers;
-use Psalm\Tests\Internal\Provider;
+use Psalm\Tests\Internal\Provider\FakeFileReferenceCacheProvider;
+use Psalm\Tests\Internal\Provider\ParserInstanceCacheProvider;
+use Psalm\Tests\Internal\Provider\ProjectCacheProvider;
+use Psalm\Tests\TestCase;
 use Psalm\Tests\TestConfig;
 
 use function array_keys;
@@ -13,9 +17,9 @@ use function strpos;
 
 use const DIRECTORY_SEPARATOR;
 
-class AnalyzedMethodTest extends \Psalm\Tests\TestCase
+class AnalyzedMethodTest extends TestCase
 {
-    public function setUp() : void
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -25,18 +29,18 @@ class AnalyzedMethodTest extends \Psalm\Tests\TestCase
 
         $providers = new Providers(
             $this->file_provider,
-            new \Psalm\Tests\Internal\Provider\ParserInstanceCacheProvider(),
+            new ParserInstanceCacheProvider(),
             null,
             null,
-            new Provider\FakeFileReferenceCacheProvider(),
-            new \Psalm\Tests\Internal\Provider\ProjectCacheProvider()
+            new FakeFileReferenceCacheProvider(),
+            new ProjectCacheProvider()
         );
 
         $this->project_analyzer = new ProjectAnalyzer(
             $config,
             $providers
         );
-        $this->project_analyzer->setPhpVersion('7.3');
+        $this->project_analyzer->setPhpVersion('7.3', 'tests');
     }
 
     /**
@@ -186,7 +190,7 @@ class AnalyzedMethodTest extends \Psalm\Tests\TestCase
                     ],
                 ],
                 [
-                    'MissingReturnType' => \Psalm\Config::REPORT_INFO,
+                    'MissingReturnType' => Config::REPORT_INFO,
                 ],
             ],
             'invalidateAfterPropertyChange' => [
@@ -496,7 +500,7 @@ class AnalyzedMethodTest extends \Psalm\Tests\TestCase
                     ],
                 ],
                 [
-                    'MissingReturnType' => \Psalm\Config::REPORT_INFO,
+                    'MissingReturnType' => Config::REPORT_INFO,
                 ],
             ],
             'invalidateTraitMethodsWhenTraitRemoved' => [
@@ -1172,9 +1176,9 @@ class AnalyzedMethodTest extends \Psalm\Tests\TestCase
                     ],
                 ],
                 [
-                    'PropertyNotSetInConstructor' => \Psalm\Config::REPORT_INFO,
-                    'DocblockTypeContradiction' => \Psalm\Config::REPORT_INFO,
-                    'RedundantConditionGivenDocblockType' => \Psalm\Config::REPORT_INFO,
+                    'PropertyNotSetInConstructor' => Config::REPORT_INFO,
+                    'DocblockTypeContradiction' => Config::REPORT_INFO,
+                    'RedundantConditionGivenDocblockType' => Config::REPORT_INFO,
                 ],
             ],
             'noChangeAfterSyntaxError' => [

@@ -2,11 +2,14 @@
 namespace Psalm\Tests;
 
 use Psalm\Context;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+use Psalm\Type;
 
 class ArrayAssignmentTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     public function testConditionalAssignment(): void
     {
@@ -19,8 +22,8 @@ class ArrayAssignmentTest extends TestCase
         );
 
         $context = new Context();
-        $context->vars_in_scope['$b'] = \Psalm\Type::getBool();
-        $context->vars_in_scope['$foo'] = \Psalm\Type::getArray();
+        $context->vars_in_scope['$b'] = Type::getBool();
+        $context->vars_in_scope['$foo'] = Type::getArray();
 
         $this->analyzeFile('somefile.php', $context);
 
@@ -831,6 +834,7 @@ class ArrayAssignmentTest extends TestCase
             'keyedIntOffsetArrayValues' => [
                 '<?php
                     $a = ["hello", 5];
+                    /** @psalm-suppress RedundantCast */
                     $a_values = array_values($a);
                     $a_keys = array_keys($a);',
                 'assertions' => [
@@ -1533,7 +1537,7 @@ class ArrayAssignmentTest extends TestCase
 
                     $x = [...test(), "a" => "b"];
                 ',
-                'assertions' => ['$x' => 'non-empty-array<int|string, mixed>']
+                'assertions' => ['$x' => 'non-empty-array<int|string, mixed|string>']
             ],
             'ArrayOffsetNumericSupPHPINTMAX' => [
                 '<?php
@@ -1686,6 +1690,28 @@ class ArrayAssignmentTest extends TestCase
                     return [...$data];
                 }',
                 [],
+                [],
+                '8.1'
+            ],
+            'unpackArrayWithTwoTypesNotObjectLike' => [
+                '<?php
+                    function int(): int
+                    {
+                        return 0;
+                    }
+
+                    /**
+                     * @return list<positive-int>
+                     */
+                    function posiviteIntegers(): array
+                    {
+                        return [1];
+                    }
+
+                    $_a = [...posiviteIntegers(), int()];',
+                'assertions' => [
+                    '$_a' => 'non-empty-list<int>',
+                ],
                 [],
                 '8.1'
             ],
@@ -2004,6 +2030,17 @@ class ArrayAssignmentTest extends TestCase
                      */
                     function baz(array $bar) : void {
                         foo((array) $bar);
+                    }',
+                'error_message' => 'RedundantCast',
+            ],
+            'arrayValuesOnList' => [
+                '<?php
+                    /**
+                     * @param list<int> $a
+                     * @return list<int>
+                     */
+                    function foo(array $a) : array {
+                        return array_values($a);
                     }',
                 'error_message' => 'RedundantCast',
             ],

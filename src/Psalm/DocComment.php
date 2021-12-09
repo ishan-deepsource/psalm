@@ -1,7 +1,9 @@
 <?php
 namespace Psalm;
 
+use PhpParser\Comment\Doc;
 use Psalm\Exception\DocblockParseException;
+use Psalm\Internal\Scanner\DocblockParser;
 use Psalm\Internal\Scanner\ParsedDocblock;
 
 use function array_filter;
@@ -39,7 +41,7 @@ class DocComment
         'yield', 'trace', 'import-type', 'flow', 'taint-specialize', 'taint-escape',
         'taint-unescape', 'self-out', 'consistent-constructor', 'stub-override',
         'require-extends', 'require-implements', 'param-out', 'ignore-var',
-        'consistent-templates', 'if-this-is',
+        'consistent-templates', 'if-this-is', 'this-out'
     ];
 
     /**
@@ -179,9 +181,9 @@ class DocComment
     /**
      * Parse a docblock comment into its parts.
      */
-    public static function parsePreservingLength(\PhpParser\Comment\Doc $docblock) : ParsedDocblock
+    public static function parsePreservingLength(Doc $docblock): ParsedDocblock
     {
-        $parsed_docblock = \Psalm\Internal\Scanner\DocblockParser::parse(
+        $parsed_docblock = DocblockParser::parse(
             $docblock->getText(),
             $docblock->getStartFilePos()
         );

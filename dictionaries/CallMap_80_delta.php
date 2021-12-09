@@ -101,9 +101,17 @@ return [
         'old' => ['list<ReflectionClassConstant>'],
         'new' => ['list<ReflectionClassConstant>', 'filter='=>'?int'],
     ],
+    'ReflectionClass::newInstanceArgs' => [
+        'old' => ['object', 'args='=>'list<mixed>'],
+        'new' => ['object', 'args='=>'array<array-key, mixed>'],
+    ],
     'XMLWriter::flush' => [
       'old' => ['string|int|false', 'empty='=>'bool'],
       'new' => ['string|int', 'empty='=>'bool'],
+    ],
+    'SoapClient::__doRequest' => [
+      'old' => ['?string', 'request'=>'string', 'location'=>'string', 'action'=>'string', 'version'=>'int', 'one_way='=>'int'],
+      'new' => ['?string', 'request'=>'string', 'location'=>'string', 'action'=>'string', 'version'=>'int', 'one_way='=>'bool'],
     ],
     'XMLWriter::startAttributeNs' => [
       'old' => ['bool', 'prefix'=>'string', 'name'=>'string', 'namespace'=>'?string'],
@@ -166,8 +174,12 @@ return [
       'new' => ['bool', 'typelib_name'=>'string', 'case_insensitive='=>'true'],
     ],
     'count_chars' => [
-      'old' => ['array<int,int>|false|string', 'input'=>'string', 'mode='=>'int'],
-      'new' => ['array<int,int>|string', 'input'=>'string', 'mode='=>'int'],
+      'old' => ['array<int,int>|false', 'input'=>'string', 'mode='=>'0|1|2'],
+      'new' => ['array<int,int>', 'input'=>'string', 'mode='=>'0|1|2'],
+    ],
+    'count_chars\'1' => [
+      'old' => ['string|false', 'input'=>'string', 'mode='=>'3|4'],
+      'new' => ['string', 'input'=>'string', 'mode='=>'3|4'],
     ],
     'curl_close' => [
       'old' => ['void', 'ch'=>'resource'],
@@ -304,6 +316,10 @@ return [
     'gmp_binomial' => [
       'old' => ['GMP|false', 'n'=>'GMP|string|int', 'k'=>'int'],
       'new' => ['GMP', 'n'=>'GMP|string|int', 'k'=>'int'],
+    ],
+    'gmstrftime' => [
+      'old' => ['string|false', 'format'=>'string', 'timestamp='=>'int'],
+      'new' => ['string|false', 'format'=>'string', 'timestamp='=>'?int'],
     ],
     'hash_init' => [
       'old' => ['HashContext|false', 'algo'=>'string', 'flags='=>'int', 'key='=>'string'],
@@ -714,8 +730,8 @@ return [
       'new' => ['string|false', 'string'=>'string', 'to_encoding'=>'string', 'from_encoding='=>'array|string|null'],
     ],
     'mb_convert_encoding\'1' => [
-      'old' => ['array<int, string>', 'string'=>'array<int, string>', 'to_encoding'=>'string', 'from_encoding='=>'mixed'],
-      'new' => ['array<int, string>', 'string'=>'array<int, string>', 'to_encoding'=>'string', 'from_encoding='=>'array|string|null'],
+      'old' => ['array', 'string'=>'array', 'to_encoding'=>'string', 'from_encoding='=>'mixed'],
+      'new' => ['array', 'string'=>'array', 'to_encoding'=>'string', 'from_encoding='=>'array|string|null'],
     ],
     'mb_convert_kana' => [
       'old' => ['string', 'string'=>'string', 'mode='=>'string', 'encoding='=>'string'],
@@ -842,8 +858,8 @@ return [
       'new' => ['string|false', 'haystack'=>'string', 'needle'=>'string', 'before_needle='=>'bool', 'encoding='=>'string|null'],
     ],
     'mb_strlen' => [
-      'old' => ['int', 'string'=>'string', 'encoding='=>'string'],
-      'new' => ['int', 'string'=>'string', 'encoding='=>'string|null'],
+      'old' => ['0|positive-int', 'string'=>'string', 'encoding='=>'string'],
+      'new' => ['0|positive-int', 'string'=>'string', 'encoding='=>'string|null'],
     ],
     'mb_strpos' => [
       'old' => ['int|false', 'haystack'=>'string', 'needle'=>'string', 'offset='=>'int', 'encoding='=>'string'],
@@ -897,9 +913,193 @@ return [
       'old' => ['int|false', 'hour='=>'int', 'minute='=>'int', 'second='=>'int', 'month='=>'int', 'day='=>'int', 'year='=>'int'],
       'new' => ['int|false', 'hour'=>'int', 'minute='=>'int|null', 'second='=>'int|null', 'month='=>'int|null', 'day='=>'int|null', 'year='=>'int|null'],
     ],
+    'mysqli::__construct' => [
+      'old' => ['void', 'hostname='=>'string', 'username='=>'string', 'password='=>'string', 'database='=>'string', 'port='=>'int', 'socket='=>'string'],
+      'new' => ['void', 'hostname='=>'string|null', 'username='=>'string|null', 'password='=>'string|null', 'database='=>'string|null', 'port='=>'int|null', 'socket='=>'string|null'],
+    ],
+    'mysqli::begin_transaction' => [
+      'old' => ['bool', 'flags='=>'int', 'name='=>'string'],
+      'new' => ['bool', 'flags='=>'int', 'name='=>'?string'],
+    ],
+    'mysqli::commit' => [
+      'old' => ['bool', 'flags='=>'int', 'name='=>'string'],
+      'new' => ['bool', 'flags='=>'int', 'name='=>'?string'],
+    ],
+    'mysqli::connect' => [
+      'old' => ['null|false', 'hostname='=>'string', 'username='=>'string', 'password='=>'string', 'database='=>'string', 'port='=>'int', 'socket='=>'string'],
+      'new' => ['null|false', 'hostname='=>'string|null', 'username='=>'string|null', 'password='=>'string|null', 'database='=>'string|null', 'port='=>'int|null', 'socket='=>'string|null'],
+    ],
+    'mysqli::rollback' => [
+      'old' => ['bool', 'flags='=>'int', 'name='=>'string'],
+      'new' => ['bool', 'flags='=>'int', 'name='=>'?string'],
+    ],
+    'mysqli_begin_transaction' => [
+      'old' => ['bool', 'mysql'=>'mysqli', 'flags='=>'int', 'name='=>'string'],
+      'new' => ['bool', 'mysql'=>'mysqli', 'flags='=>'int', 'name='=>'?string'],
+    ],
+    'mysqli_commit' => [
+      'old' => ['bool', 'mysql'=>'mysqli', 'flags='=>'int', 'name='=>'string'],
+      'new' => ['bool', 'mysql'=>'mysqli', 'flags='=>'int', 'name='=>'?string'],
+    ],
+    'mysqli_connect' => [
+      'old' => ['mysqli|false', 'hostname='=>'string', 'username='=>'string', 'password='=>'string', 'database='=>'string', 'port='=>'int', 'socket='=>'string'],
+      'new' => ['mysqli|false', 'hostname='=>'string|null', 'username='=>'string|null', 'password='=>'string|null', 'database='=>'string|null', 'port='=>'int|null', 'socket='=>'string|null'],
+    ],
+    'mysqli_rollback' => [
+      'old' => ['bool', 'mysql'=>'mysqli', 'flags='=>'int', 'name='=>'string'],
+      'new' => ['bool', 'mysql'=>'mysqli', 'flags='=>'int', 'name='=>'?string'],
+    ],
+    'openssl_csr_export' => [
+      'old' => ['bool', 'csr'=>'string|resource', '&w_output'=>'string', 'no_text='=>'bool'],
+      'new' => ['bool', 'csr'=>'OpenSSLCertificateSigningRequest|string', '&w_output'=>'OpenSSLAsymmetricKey', 'no_text='=>'bool'],
+    ],
+    'openssl_csr_export_to_file' => [
+      'old' => ['bool', 'csr'=>'string|resource', 'output_filename'=>'string', 'no_text='=>'bool'],
+      'new' => ['bool', 'csr'=>'OpenSSLCertificateSigningRequest|string', 'output_filename'=>'string', 'no_text='=>'bool'],
+    ],
+    'openssl_csr_get_public_key' => [
+      'old' => ['resource|false', 'csr'=>'string|resource', 'short_names='=>'bool'],
+      'new' => ['OpenSSLAsymmetricKey|false', 'csr'=>'OpenSSLCertificateSigningRequest|string', 'short_names='=>'bool'],
+    ],
+    'openssl_csr_get_subject' => [
+      'old' => ['array|false', 'csr'=>'string|resource', 'short_names='=>'bool'],
+      'new' => ['array|false', 'csr'=>'OpenSSLCertificateSigningRequest|string', 'short_names='=>'bool'],
+    ],
+    'openssl_csr_new' => [
+      'old' => ['resource|false', 'distinguished_names'=>'array', '&w_private_key'=>'resource', 'options='=>'array', 'extra_attributes='=>'array'],
+      'new' => ['OpenSSLCertificateSigningRequest|false', 'distinguished_names'=>'array', '&w_private_key'=>'OpenSSLAsymmetricKey', 'options='=>'array|null', 'extra_attributes='=>'array|null'],
+    ],
+    'openssl_csr_sign' => [
+        'old' =>  ['resource|false', 'csr'=>'string|resource', 'ca_certificate'=>'string|resource|null', 'private_key'=>'string|resource|array', 'days'=>'int', 'options='=>'array', 'serial='=>'int'],
+        'new' => ['OpenSSLCertificate|false', 'csr'=>'OpenSSLCertificateSigningRequest|string', 'ca_certificate'=>'OpenSSLCertificate|string|null', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'days'=>'int', 'options='=>'array|null', 'serial='=>'int'],
+    ],
+    'openssl_dh_compute_key' => [
+      'old' => ['string|false', 'public_key'=>'string', 'private_key'=>'resource'],
+      'new' => ['string|false', 'public_key'=>'string', 'private_key'=>'OpenSSLAsymmetricKey'],
+    ],
+    'openssl_free_key' => [
+      'old' => ['void', 'key'=>'resource'],
+      'new' => ['void', 'key'=>'OpenSSLAsymmetricKey'],
+    ],
+    'openssl_get_privatekey' => [
+      'old' => ['resource|false', 'private_key'=>'string', 'passphrase='=>'string'],
+      'new' => ['OpenSSLAsymmetricKey|false', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'passphrase='=>'?string'],
+    ],
+    'openssl_get_publickey' => [
+      'old' => ['resource|false', 'public_key'=>'resource|string'],
+      'new' => ['OpenSSLAsymmetricKey|false', 'public_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string'],
+    ],
+    'openssl_open' => [
+      'old' => ['bool', 'data'=>'string', '&w_output'=>'string', 'encrypted_key'=>'string', 'private_key'=>'string|array|resource', 'cipher_algo='=>'string', 'iv='=>'string'],
+      'new' => ['bool', 'data'=>'string', '&w_output'=>'string', 'encrypted_key'=>'string', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'cipher_algo'=>'string', 'iv='=>'string|null'],
+    ],
+    'openssl_pkcs12_export' => [
+      'old' => ['bool', 'certificate'=>'string|resource', '&w_output'=>'string', 'private_key'=>'string|array|resource', 'passphrase'=>'string', 'options='=>'array'],
+      'new' => ['bool', 'certificate'=>'OpenSSLCertificate|string', '&w_output'=>'string', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'passphrase'=>'string', 'options='=>'array'],
+    ],
+    'openssl_pkcs12_export_to_file' => [
+      'old' => ['bool', 'certificate'=>'string|resource', 'output_filename'=>'string', 'private_key'=>'string|array|resource', 'passphrase'=>'string', 'options='=>'array'],
+      'new' => ['bool', 'certificate'=>'OpenSSLCertificate|string', 'output_filename'=>'string', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'passphrase'=>'string', 'options='=>'array'],
+    ],
+    'openssl_pkcs7_decrypt' => [
+      'old' => ['bool', 'input_filename'=>'string', 'output_filename'=>'string', 'certificate'=>'string|resource', 'private_key='=>'string|resource|array'],
+      'new' => ['bool', 'input_filename'=>'string', 'output_filename'=>'string', 'certificate'=>'OpenSSLCertificate|string', 'private_key='=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string|null'],
+    ],
+    'openssl_pkcs7_encrypt' => [
+      'old' => ['bool', 'input_filename'=>'string', 'output_filename'=>'string', 'certificate'=>'string|resource|array', 'headers'=>'array', 'flags='=>'int', 'cipher_algo='=>'int'],
+      'new' => ['bool', 'input_filename'=>'string', 'output_filename'=>'string', 'certificate'=>'OpenSSLCertificate|list<OpenSSLCertificate|string>|string', 'headers'=>'array|null', 'flags='=>'int', 'cipher_algo='=>'int'],
+    ],
+    'openssl_pkcs7_sign' => [
+      'old' => ['bool', 'input_filename'=>'string', 'output_filename'=>'string', 'certificate'=>'string|resource', 'private_key'=>'string|resource|array', 'headers'=>'array', 'flags='=>'int', 'untrusted_certificates_filename='=>'string'],
+      'new' => ['bool', 'input_filename'=>'string', 'output_filename'=>'string', 'certificate'=>'OpenSSLCertificate|string', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'headers'=>'array|null', 'flags='=>'int', 'untrusted_certificates_filename='=>'string|null'],
+    ],
+    'openssl_pkey_derive' => [
+      'old' => ['string|false', 'public_key'=>'mixed', 'private_key'=>'mixed', 'key_length='=>'?int'],
+      'new' => ['string|false', 'public_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'key_length='=>'int'],
+    ],
+    'openssl_pkey_export' => [
+      'old' => ['bool', 'key'=>'resource', '&w_output'=>'string', 'passphrase='=>'string|null', 'options='=>'array'],
+      'new' => ['bool', 'key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', '&w_output'=>'string', 'passphrase='=>'string|null', 'options='=>'array|null'],
+    ],
+    'openssl_pkey_export_to_file' => [
+      'old' => ['bool', 'key'=>'resource|string|array', 'output_filename'=>'string', 'passphrase='=>'string|null', 'options='=>'array'],
+      'new' => ['bool', 'key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'output_filename'=>'string', 'passphrase='=>'string|null', 'options='=>'array|null'],
+    ],
+    'openssl_pkey_free' => [
+      'old' => ['void', 'key'=>'resource'],
+      'new' => ['void', 'key'=>'OpenSSLAsymmetricKey'],
+    ],
+    'openssl_pkey_get_details' => [
+      'old' => ['array|false', 'key'=>'resource'],
+      'new' => ['array|false', 'key'=>'OpenSSLAsymmetricKey'],
+    ],
     'openssl_pkey_get_private' => [
       'old' => ['resource|false', 'private_key'=>'string', 'passphrase='=>'string'],
       'new' => ['OpenSSLAsymmetricKey|false', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array|string', 'passphrase='=>'?string'],
+    ],
+    'openssl_pkey_get_public' => [
+      'old' => ['resource|false', 'public_key'=>'resource|string'],
+      'new' => ['OpenSSLAsymmetricKey|false', 'public_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string'],
+    ],
+    'openssl_pkey_new' => [
+      'old' => ['resource|false', 'options='=>'array'],
+      'new' => ['OpenSSLAsymmetricKey|false', 'options='=>'array|null'],
+    ],
+    'openssl_private_decrypt' => [
+      'old' => ['bool', 'data'=>'string', '&w_decrypted_data'=>'string', 'private_key'=>'string|resource|array', 'padding='=>'int'],
+      'new' => ['bool', 'data'=>'string', '&w_decrypted_data'=>'string', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'padding='=>'int'],
+    ],
+    'openssl_private_encrypt' => [
+      'old' => ['bool', 'data'=>'string', '&w_encrypted_data'=>'string', 'private_key'=>'string|resource|array', 'padding='=>'int'],
+      'new' => ['bool', 'data'=>'string', '&w_encrypted_data'=>'string', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'padding='=>'int'],
+    ],
+    'openssl_public_decrypt' => [
+      'old' => ['bool', 'data'=>'string', '&w_decrypted_data'=>'string', 'public_key'=>'string|resource', 'padding='=>'int'],
+      'new' => ['bool', 'data'=>'string', '&w_decrypted_data'=>'string', 'public_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'padding='=>'int'],
+    ],
+    'openssl_public_encrypt' => [
+      'old' => ['bool', 'data'=>'string', '&w_encrypted_data'=>'string', 'public_key'=>'string|resource', 'padding='=>'int'],
+      'new' => ['bool', 'data'=>'string', '&w_encrypted_data'=>'string', 'public_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'padding='=>'int'],
+    ],
+    'openssl_seal' => [
+      'old' => ['int|false', 'data'=>'string', '&w_sealed_data'=>'string', '&w_encrypted_keys'=>'array', 'public_key'=>'array', 'cipher_algo='=>'string', '&rw_iv='=>'string'],
+      'new' => ['int|false', 'data'=>'string', '&w_sealed_data'=>'string', '&w_encrypted_keys'=>'array', 'public_key'=>'list<OpenSSLAsymmetricKey>', 'cipher_algo'=>'string', '&rw_iv='=>'string'],
+    ],
+    'openssl_sign' => [
+      'old' => ['bool', 'data'=>'string', '&w_signature'=>'string', 'private_key'=>'resource|string', 'algorithm='=>'int|string'],
+      'new' => ['bool', 'data'=>'string', '&w_signature'=>'string', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'algorithm='=>'int|string'],
+    ],
+    'openssl_spki_new' => [
+      'old' => ['?string', 'private_key'=>'resource', 'challenge'=>'string', 'digest_algo='=>'int'],
+      'new' => ['string|false', 'private_key'=>'OpenSSLAsymmetricKey', 'challenge'=>'string', 'digest_algo='=>'int'],
+    ],
+    'openssl_verify' => [
+      'old' => ['-1|0|1', 'data'=>'string', 'signature'=>'string', 'public_key'=>'resource|string', 'algorithm='=>'int|string'],
+      'new' => ['-1|0|1|false', 'data'=>'string', 'signature'=>'string', 'public_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string', 'algorithm='=>'int|string'],
+    ],
+    'openssl_x509_check_private_key' => [
+      'old' => ['bool', 'certificate'=>'string|resource', 'private_key'=>'string|resource|array'],
+      'new' => ['bool', 'certificate'=>'OpenSSLCertificate|string', 'private_key'=>'OpenSSLAsymmetricKey|OpenSSLCertificate|array{OpenSSLAsymmetricKey|OpenSSLCertificate|string, string}|string'],
+    ],
+    'openssl_x509_checkpurpose' => [
+      'old' => ['bool|int', 'certificate'=>'string|resource', 'purpose'=>'int', 'ca_info='=>'array', 'untrusted_certificates_file='=>'string'],
+      'new' => ['bool|int', 'certificate'=>'OpenSSLCertificate|string', 'purpose'=>'int', 'ca_info='=>'array', 'untrusted_certificates_file='=>'string|null'],
+    ],
+    'openssl_x509_export' => [
+      'old' => ['bool', 'certificate'=>'string|resource', '&w_output'=>'string', 'no_text='=>'bool'],
+      'new' => ['bool', 'certificate'=>'OpenSSLCertificate|string', '&w_output'=>'string', 'no_text='=>'bool'],
+    ],
+    'openssl_x509_export_to_file' => [
+      'old' =>  ['bool', 'certificate'=>'string|resource', 'output_filename'=>'string', 'no_text='=>'bool'],
+      'new' => ['bool', 'certificate'=>'OpenSSLCertificate|string', 'output_filename'=>'string', 'no_text='=>'bool'],
+    ],
+    'openssl_x509_fingerprint' => [
+      'old' => ['string|false', 'certificate'=>'string|resource', 'digest_algo='=>'string', 'binary='=>'bool'],
+      'new' => ['string|false', 'certificate'=>'OpenSSLCertificate|string', 'digest_algo='=>'string', 'binary='=>'bool'],
+    ],
+    'openssl_x509_free' => [
+      'old' => ['void', 'certificate'=>'resource'],
+      'new' => ['void', 'certificate'=>'OpenSSLCertificate'],
     ],
     'openssl_x509_parse' => [
       'old' => ['array|false', 'certificate'=>'string|resource', 'short_names='=>'bool'],
@@ -920,6 +1120,10 @@ return [
     'proc_get_status' => [
       'old' => ['array{command: string, pid: int, running: bool, signaled: bool, stopped: bool, exitcode: int, termsig: int, stopsig: int}|false', 'process'=>'resource'],
       'new' => ['array{command: string, pid: int, running: bool, signaled: bool, stopped: bool, exitcode: int, termsig: int, stopsig: int}', 'process'=>'resource'],
+    ],
+    'session_set_cookie_params' => [
+      'old' => ['bool', 'lifetime'=>'int', 'path='=>'string', 'domain='=>'string', 'secure='=>'bool', 'httponly='=>'bool'],
+      'new' => ['bool', 'lifetime'=>'int', 'path='=>'?string', 'domain='=>'?string', 'secure='=>'?bool', 'httponly='=>'?bool'],
     ],
     'socket_accept' => [
       'old' => ['resource|false', 'socket'=>'resource'],
@@ -1084,6 +1288,10 @@ return [
     'strchr' => [
       'old' => ['string|false', 'haystack'=>'string', 'needle'=>'string|int', 'before_needle='=>'bool'],
       'new' => ['string|false', 'haystack'=>'string', 'needle'=>'string', 'before_needle='=>'bool'],
+    ],
+    'strftime' => [
+      'old' => ['string|false', 'format'=>'string', 'timestamp='=>'int'],
+      'new' => ['string|false', 'format'=>'string', 'timestamp='=>'?int'],
     ],
     'stripos' => [
       'old' => ['int|false', 'haystack'=>'string', 'needle'=>'string|int', 'offset='=>'int'],

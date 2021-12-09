@@ -1,12 +1,14 @@
 <?php
 namespace Psalm\Internal\Analyzer;
 
+use InvalidArgumentException;
 use PhpParser;
 use Psalm\Aliases;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Context;
 use Psalm\Internal\FileManipulation\FileManipulationBuffer;
+use Psalm\Internal\Provider\NodeDataProvider;
 use Psalm\Issue\InaccessibleProperty;
 use Psalm\Issue\InvalidClass;
 use Psalm\Issue\MissingDependency;
@@ -19,6 +21,7 @@ use Psalm\Plugin\EventHandler\Event\AfterClassLikeExistenceCheckEvent;
 use Psalm\StatementsSource;
 use Psalm\Storage\ClassLikeStorage;
 use Psalm\Type;
+use UnexpectedValueException;
 
 use function array_pop;
 use function explode;
@@ -123,7 +126,7 @@ abstract class ClassLikeAnalyzer extends SourceAnalyzer
             ) {
                 $method_analyzer = new MethodAnalyzer($stmt, $this);
 
-                $method_analyzer->analyze($context, new \Psalm\Internal\Provider\NodeDataProvider(), null, true);
+                $method_analyzer->analyze($context, new NodeDataProvider(), null, true);
 
                 $context->clauses = [];
             } elseif ($stmt instanceof PhpParser\Node\Stmt\TraitUse) {
@@ -168,7 +171,7 @@ abstract class ClassLikeAnalyzer extends SourceAnalyzer
 
                             $method_analyzer->analyze(
                                 $context,
-                                new \Psalm\Internal\Provider\NodeDataProvider(),
+                                new NodeDataProvider(),
                                 null,
                                 true
                             );
@@ -181,7 +184,7 @@ abstract class ClassLikeAnalyzer extends SourceAnalyzer
         }
     }
 
-    public function getFunctionLikeAnalyzer(string $method_name) : ?MethodAnalyzer
+    public function getFunctionLikeAnalyzer(string $method_name): ?MethodAnalyzer
     {
         foreach ($this->class->stmts as $stmt) {
             if ($stmt instanceof PhpParser\Node\Stmt\ClassMethod &&
@@ -240,16 +243,14 @@ abstract class ClassLikeAnalyzer extends SourceAnalyzer
             $class_name_parts = explode('\\', $fq_class_name);
             $class_name = array_pop($class_name_parts);
 
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new ReservedWord(
                     $class_name . ' is a reserved word',
                     $code_location,
                     $class_name
                 ),
                 $suppressed_issues
-            )) {
-                // fall through
-            }
+            );
 
             return null;
         }
@@ -325,7 +326,7 @@ abstract class ClassLikeAnalyzer extends SourceAnalyzer
 
         try {
             $class_storage = $codebase->classlike_storage_provider->get($aliased_name);
-        } catch (\InvalidArgumentException $e) {
+        } catch (InvalidArgumentException $e) {
             if (!$options->inferred) {
                 throw $e;
             }
@@ -359,16 +360,14 @@ abstract class ClassLikeAnalyzer extends SourceAnalyzer
                 || ($enum_exists && !$codebase->classlikes->enumHasCorrectCasing($fq_class_name))
             ) {
                 if ($codebase->classlikes->isUserDefined(strtolower($aliased_name))) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidClass(
                             'Class, interface or enum ' . $fq_class_name . ' has wrong casing',
                             $code_location,
                             $fq_class_name
                         ),
                         $suppressed_issues
-                    )) {
-                        // fall through here
-                    }
+                    );
                 }
             }
         }
@@ -551,7 +550,7 @@ abstract class ClassLikeAnalyzer extends SourceAnalyzer
         );
 
         if (!$declaring_property_class || !$appearing_property_class) {
-            throw new \UnexpectedValueException(
+            throw new UnexpectedValueException(
                 'Appearing/Declaring classes are not defined for ' . $property_id
             );
         }
@@ -570,7 +569,7 @@ abstract class ClassLikeAnalyzer extends SourceAnalyzer
         $class_storage = $codebase->classlike_storage_provider->get($declaring_property_class);
 
         if (!isset($class_storage->properties[$property_name])) {
-            throw new \UnexpectedValueException('$storage should not be null for ' . $property_id);
+            throw new UnexpectedValueException('$storage should not be null for ' . $property_id);
         }
 
         $storage = $class_storage->properties[$property_name];
@@ -635,12 +634,12 @@ abstract class ClassLikeAnalyzer extends SourceAnalyzer
     {
         try {
             return $codebase->file_storage_provider->get($file_path)->classlikes_in_file;
-        } catch (\InvalidArgumentException $e) {
+        } catch (InvalidArgumentException $e) {
             return [];
         }
     }
 
-    public function getFileAnalyzer() : FileAnalyzer
+    public function getFileAnalyzer(): FileAnalyzer
     {
         return $this->file_analyzer;
     }

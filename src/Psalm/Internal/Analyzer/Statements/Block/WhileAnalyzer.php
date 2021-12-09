@@ -7,6 +7,7 @@ use Psalm\Internal\Analyzer\ScopeAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Scope\LoopScope;
 use Psalm\Type;
+use UnexpectedValueException;
 
 use function array_intersect_key;
 use function array_merge;
@@ -60,7 +61,7 @@ class WhileAnalyzer
         }
 
         if (!$inner_loop_context) {
-            throw new \UnexpectedValueException('There should be an inner loop context');
+            throw new UnexpectedValueException('There should be an inner loop context');
         }
 
         $always_enters_loop = false;
@@ -124,7 +125,7 @@ class WhileAnalyzer
      */
     public static function getAndExpressions(
         PhpParser\Node\Expr $expr
-    ) : array {
+    ): array {
         if ($expr instanceof PhpParser\Node\Expr\BinaryOp\BooleanAnd) {
             return array_merge(
                 self::getAndExpressions($expr->left),

@@ -2,14 +2,15 @@
 namespace Psalm\Tests\Template;
 
 use Psalm\Tests\TestCase;
-use Psalm\Tests\Traits;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 use const DIRECTORY_SEPARATOR;
 
 class ClassTemplateTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -2287,6 +2288,7 @@ class ClassTemplateTest extends TestCase
                          * @return static<U>
                          */
                         public function map(callable $callback) {
+                            /** @psalm-suppress RedundantCast */
                             return new static(array_values(array_map($callback, $this->elements)));
                         }
                     }

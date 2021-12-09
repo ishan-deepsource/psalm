@@ -1,33 +1,45 @@
 <?php
 namespace Psalm\Internal\PhpVisitor;
 
+use LogicException;
 use PhpParser;
 use Psalm\Aliases;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
+use Psalm\Exception\CodeException;
 use Psalm\Exception\DocblockParseException;
 use Psalm\Exception\TypeParseTreeException;
 use Psalm\FileSource;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\CommentAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\SimpleTypeInferer;
+use Psalm\Internal\EventDispatcher;
+use Psalm\Internal\Provider\NodeDataProvider;
 use Psalm\Internal\Scanner\FileScanner;
 use Psalm\Internal\Scanner\PhpStormMetaScanner;
 use Psalm\Internal\Type\TypeAlias;
 use Psalm\Internal\Type\TypeParser;
 use Psalm\Issue\InvalidDocblock;
+use Psalm\Issue\TaintedInput;
 use Psalm\Plugin\EventHandler\Event\AfterClassLikeVisitEvent;
 use Psalm\Storage\FileStorage;
 use Psalm\Storage\MethodStorage;
 use Psalm\Type;
+use UnexpectedValueException;
 
 use function array_pop;
 use function end;
+use function explode;
+use function get_class;
 use function implode;
 use function in_array;
 use function is_string;
+use function reset;
+use function spl_object_id;
 use function strpos;
 use function strtolower;
+
+use const PHP_VERSION_ID;
 
 /**
  * @internal
@@ -38,11 +50,6 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
      * @var Aliases
      */
     private $aliases;
-
-    /**
-     * @var string[]
-     */
-    private $fq_classlike_names = [];
 
     /**
      * @var FileScanner
@@ -104,7 +111,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
      */
     private $bad_classes = [];
     /**
-     * @var \Psalm\Internal\EventDispatcher
+     * @var EventDispatcher
      */
     private $eventDispatcher;
 
@@ -171,7 +178,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
             $this->classlike_node_scanners[] = $classlike_node_scanner;
 
             if ($classlike_node_scanner->start($node) === false) {
-                $this->bad_classes[\spl_object_id($node)] = true;
+                $this->bad_classes[spl_object_id($node)] = true;
                 return PhpParser\NodeTraverser::DONT_TRAVERSE_CHILDREN;
             }
 
@@ -235,7 +242,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
                     $classlike_storage->class_implements['stringable'] = 'Stringable';
                 }
 
-                if (\PHP_VERSION_ID >= 80000) {
+                if (PHP_VERSION_ID >= 80000) {
                     $this->codebase->scanner->queueClassLikeForScanning('Stringable');
                 }
             }
@@ -263,7 +270,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
             }
 
             if (!$this->classlike_node_scanners) {
-                throw new \LogicException('$this->classlike_node_scanners should not be empty');
+                throw new LogicException('$this->classlike_node_scanners should not be empty');
             }
 
             $classlike_node_scanner = end($this->classlike_node_scanners);
@@ -273,7 +280,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
             foreach ($node->consts as $const) {
                 $const_type = SimpleTypeInferer::infer(
                     $this->codebase,
-                    new \Psalm\Internal\Provider\NodeDataProvider(),
+                    new NodeDataProvider(),
                     $const->value,
                     $this->aliases
                 ) ?? Type::getMixed();
@@ -288,7 +295,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
                 $this->file_storage->declaring_constants[$fq_const_name] = $this->file_path;
             }
         } elseif ($node instanceof PhpParser\Node\Stmt\If_ && !$this->skip_if_descendants) {
-            if (!$this->fq_classlike_names && !$this->functionlike_node_scanners) {
+            if (!$this->functionlike_node_scanners) {
                 $this->exists_cond_expr = $node->cond;
 
                 if (Reflector\ExpressionResolver::enterConditional(
@@ -396,7 +403,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
         return null;
     }
 
-    private function handleNamespace(PhpParser\Node\Stmt\Namespace_ $node) : void
+    private function handleNamespace(PhpParser\Node\Stmt\Namespace_ $node): void
     {
         $this->file_storage->aliases = $this->aliases;
 
@@ -419,7 +426,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
         }
     }
 
-    private function handleUse(PhpParser\Node\Stmt\Use_ $node) : void
+    private function handleUse(PhpParser\Node\Stmt\Use_ $node): void
     {
         foreach ($node->uses as $use) {
             $use_path = implode('\\', $use->name->parts);
@@ -451,7 +458,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
         $this->aliases->uses_end = (int) $node->getAttribute('endFilePos') + 1;
     }
 
-    private function handleGroupUse(PhpParser\Node\Stmt\GroupUse $node) : void
+    private function handleGroupUse(PhpParser\Node\Stmt\GroupUse $node): void
     {
         $use_prefix = implode('\\', $node->prefix->parts);
 
@@ -491,7 +498,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
     {
         if ($node instanceof PhpParser\Node\Stmt\Namespace_) {
             if (!$this->file_storage->aliases) {
-                throw new \UnexpectedValueException('File storage liases should not be null');
+                throw new UnexpectedValueException('File storage liases should not be null');
             }
 
             $this->aliases = $this->file_storage->aliases;
@@ -515,12 +522,12 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
                 return null;
             }
 
-            if (isset($this->bad_classes[\spl_object_id($node)])) {
+            if (isset($this->bad_classes[spl_object_id($node)])) {
                 return null;
             }
 
             if (!$this->classlike_node_scanners) {
-                throw new \UnexpectedValueException('$this->classlike_node_scanners cannot be empty');
+                throw new UnexpectedValueException('$this->classlike_node_scanners cannot be empty');
             }
 
             $classlike_node_scanner = array_pop($this->classlike_node_scanners);
@@ -554,7 +561,7 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
                     return null;
                 }
 
-                throw new \UnexpectedValueException(
+                throw new UnexpectedValueException(
                     'There should be function storages for line ' . $this->file_path . ':' . $node->getLine()
                 );
             }
@@ -567,16 +574,16 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
                         || strpos($docblock_issue->code_location->file_path, 'CoreGenericClasses.phpstub')
                         || strpos($this->file_path, 'CoreGenericIterators.phpstub')
                     ) {
-                        $e = \reset($functionlike_node_scanner->storage->docblock_issues);
+                        $e = reset($functionlike_node_scanner->storage->docblock_issues);
 
-                        $fqcn_parts = \explode('\\', \get_class($e));
-                        $issue_type = \array_pop($fqcn_parts);
+                        $fqcn_parts = explode('\\', get_class($e));
+                        $issue_type = array_pop($fqcn_parts);
 
-                        $message = $e instanceof \Psalm\Issue\TaintedInput
+                        $message = $e instanceof TaintedInput
                             ? $e->getJourneyMessage()
                             : $e->message;
 
-                        throw new \Psalm\Exception\CodeException(
+                        throw new CodeException(
                             'Error with core stub file docblocks: '
                                 . $issue_type
                                 . ' - ' . $e->getShortLocationWithPrevious()
@@ -626,6 +633,9 @@ class ReflectorVisitor extends PhpParser\NodeVisitorAbstract implements FileSour
         return $this->aliases;
     }
 
+    /**
+     * @phpcsSuppress SlevomatCodingStandard.TypeHints.ReturnTypeHint.MissingAnyTypeHint
+     */
     public function afterTraverse(array $nodes)
     {
         $this->file_storage->type_aliases = $this->type_aliases;

@@ -3,10 +3,14 @@ namespace Psalm\Internal\Analyzer\Statements\Expression\BinaryOp;
 
 use PhpParser;
 use Psalm\CodeLocation;
+use Psalm\Codebase;
 use Psalm\Config;
 use Psalm\Context;
+use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Assignment\ArrayAssignmentAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
+use Psalm\Internal\Provider\NodeDataProvider;
 use Psalm\Internal\Type\TypeCombiner;
 use Psalm\Issue\FalseOperand;
 use Psalm\Issue\InvalidOperand;
@@ -32,11 +36,13 @@ use Psalm\Type\Atomic\TMixed;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TNumeric;
+use Psalm\Type\Atomic\TNumericString;
 use Psalm\Type\Atomic\TPositiveInt;
 use Psalm\Type\Atomic\TTemplateParam;
 
 use function array_diff_key;
 use function array_values;
+use function count;
 use function is_int;
 use function is_numeric;
 use function max;
@@ -51,13 +57,13 @@ class ArithmeticOpAnalyzer
 {
     public static function analyze(
         ?StatementsSource $statements_source,
-        \Psalm\Internal\Provider\NodeDataProvider $nodes,
+        NodeDataProvider $nodes,
         PhpParser\Node\Expr $left,
         PhpParser\Node\Expr $right,
         PhpParser\Node $parent,
         ?Type\Union &$result_type = null,
         ?Context $context = null
-    ) : void {
+    ): void {
         $codebase = $statements_source ? $statements_source->getCodebase() : null;
 
         $left_type = $nodes->getType($left);
@@ -214,25 +220,21 @@ class ArithmeticOpAnalyzer
                 $first_left_message = $invalid_left_messages[0];
 
                 if ($has_valid_left_operand) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new PossiblyInvalidOperand(
                             $first_left_message,
                             new CodeLocation($statements_source, $left)
                         ),
                         $statements_source->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidOperand(
                             $first_left_message,
                             new CodeLocation($statements_source, $left)
                         ),
                         $statements_source->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
 
@@ -240,38 +242,32 @@ class ArithmeticOpAnalyzer
                 $first_right_message = $invalid_right_messages[0];
 
                 if ($has_valid_right_operand) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new PossiblyInvalidOperand(
                             $first_right_message,
                             new CodeLocation($statements_source, $right)
                         ),
                         $statements_source->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidOperand(
                             $first_right_message,
                             new CodeLocation($statements_source, $right)
                         ),
                         $statements_source->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
 
             if ($has_string_increment && $statements_source) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new StringIncrement(
                         'Possibly unintended string increment',
                         new CodeLocation($statements_source, $left)
                     ),
                     $statements_source->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
     }
@@ -294,7 +290,7 @@ class ArithmeticOpAnalyzer
      */
     private static function analyzeOperands(
         ?StatementsSource $statements_source,
-        ?\Psalm\Codebase $codebase,
+        ?Codebase $codebase,
         Config $config,
         ?Context $context,
         PhpParser\Node\Expr $left,
@@ -384,7 +380,7 @@ class ArithmeticOpAnalyzer
 
             $combined_atomic_types = array_values($combined_type->getAtomicTypes());
 
-            if (\count($combined_atomic_types) <= 2) {
+            if (count($combined_atomic_types) <= 2) {
                 $left_type_part = $combined_atomic_types[0];
                 $right_type_part = $combined_atomic_types[1] ?? $combined_atomic_types[0];
             }
@@ -396,8 +392,8 @@ class ArithmeticOpAnalyzer
                     && !$context->collect_mutations
                     && $statements_source->getFilePath() === $statements_source->getRootFilePath()
                     && (!(($source = $statements_source->getSource())
-                            instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                        || !$source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                            instanceof FunctionLikeAnalyzer)
+                        || !$source->getSource() instanceof TraitAnalyzer)
                 ) {
                     $codebase->analyzer->incrementMixedCount($statements_source->getFilePath());
                 }
@@ -474,8 +470,8 @@ class ArithmeticOpAnalyzer
                 && !$context->collect_mutations
                 && $statements_source->getFilePath() === $statements_source->getRootFilePath()
                 && (!(($parent_source = $statements_source->getSource())
-                        instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                    || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                        instanceof FunctionLikeAnalyzer)
+                    || !$parent_source->getSource() instanceof TraitAnalyzer)
             ) {
                 $codebase->analyzer->incrementNonMixedCount($statements_source->getFilePath());
             }
@@ -614,6 +610,49 @@ class ArithmeticOpAnalyzer
             }
 
             return null;
+        }
+
+        if ($parent instanceof PhpParser\Node\Expr\BinaryOp\Plus
+            || $parent instanceof PhpParser\Node\Expr\BinaryOp\Minus
+            || $parent instanceof PhpParser\Node\Expr\BinaryOp\Mul
+            || $parent instanceof PhpParser\Node\Expr\BinaryOp\Div
+            || $parent instanceof PhpParser\Node\Expr\BinaryOp\Mod
+            || $parent instanceof PhpParser\Node\Expr\BinaryOp\Pow
+        ) {
+            $non_decimal_type = null;
+            if ($left_type_part instanceof TNamedObject
+                && strtolower($left_type_part->value) === "decimal\\decimal"
+            ) {
+                $non_decimal_type = $right_type_part;
+            } elseif ($right_type_part instanceof TNamedObject
+                && strtolower($right_type_part->value) === "decimal\\decimal"
+            ) {
+                $non_decimal_type = $left_type_part;
+            }
+            if ($non_decimal_type !== null) {
+                if ($non_decimal_type instanceof TInt
+                    || $non_decimal_type instanceof TNumericString
+                    || $non_decimal_type instanceof TNamedObject
+                        && strtolower($non_decimal_type->value) === "decimal\\decimal"
+                ) {
+                    $result_type = Type::combineUnionTypes(
+                        new Type\Union([new TNamedObject("Decimal\\Decimal")]),
+                        $result_type
+                    );
+                } else {
+                    if ($statements_source) {
+                        IssueBuffer::maybeAdd(
+                            new InvalidOperand(
+                                "Cannot add Decimal\\Decimal to {$non_decimal_type->getId()}",
+                                new CodeLocation($statements_source, $parent)
+                            ),
+                            $statements_source->getSuppressedIssues()
+                        );
+                    }
+                }
+
+                return null;
+            }
         }
 
         if ($left_type_part instanceof Type\Atomic\TLiteralString) {

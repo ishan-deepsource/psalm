@@ -4,6 +4,7 @@ namespace Psalm\Internal\Analyzer\Statements;
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Context;
+use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\ArgumentAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\CastAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
@@ -22,7 +23,7 @@ class EchoAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Stmt\Echo_ $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $echo_param = new FunctionLikeParameter(
             'var',
             false
@@ -38,7 +39,7 @@ class EchoAnalyzer
             $expr_type = $statements_analyzer->node_data->getType($expr);
 
             if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph) {
-                if ($expr_type) {
+                if ($expr_type && $expr_type->hasObjectType()) {
                     $expr_type = CastAnalyzer::castStringAttempt(
                         $statements_analyzer,
                         $context,
@@ -101,29 +102,25 @@ class EchoAnalyzer
                 return false;
             }
         } elseif (isset($codebase->config->forbidden_functions['echo'])) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new ForbiddenCode(
                     'Use of echo',
                     new CodeLocation($statements_analyzer, $stmt)
                 ),
                 $statements_analyzer->getSource()->getSuppressedIssues()
-            )) {
-                // continue
-            }
+            );
         }
 
         if (!$context->collect_initializations && !$context->collect_mutations) {
             if ($context->mutation_free || $context->external_mutation_free) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new ImpureFunctionCall(
                         'Cannot call echo from a mutation-free context',
                         new CodeLocation($statements_analyzer, $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
-            } elseif ($statements_analyzer->getSource() instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer
+                );
+            } elseif ($statements_analyzer->getSource() instanceof FunctionLikeAnalyzer
                 && $statements_analyzer->getSource()->track_mutations
             ) {
                 $statements_analyzer->getSource()->inferred_has_mutation = true;

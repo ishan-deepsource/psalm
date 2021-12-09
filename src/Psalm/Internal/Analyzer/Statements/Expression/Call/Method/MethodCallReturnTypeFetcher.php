@@ -4,6 +4,7 @@ namespace Psalm\Internal\Analyzer\Statements\Expression\Call\Method;
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
+use Psalm\Config;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\FunctionCallReturnTypeFetcher;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
@@ -16,10 +17,15 @@ use Psalm\Internal\MethodIdentifier;
 use Psalm\Internal\Type\TemplateBound;
 use Psalm\Internal\Type\TemplateInferredTypeReplacer;
 use Psalm\Internal\Type\TemplateResult;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 use Psalm\Type;
 use Psalm\Type\Atomic\TGenericObject;
+use UnexpectedValueException;
 
+use function array_filter;
+use function count;
+use function in_array;
 use function strtolower;
 
 class MethodCallReturnTypeFetcher
@@ -42,7 +48,7 @@ class MethodCallReturnTypeFetcher
         array $args,
         AtomicMethodCallAnalysisResult $result,
         TemplateResult $template_result
-    ) : Type\Union {
+    ): Type\Union {
         $call_map_id = $declaring_method_id ?? $method_id;
 
         $fq_class_name = $method_id->fq_class_name;
@@ -100,14 +106,14 @@ class MethodCallReturnTypeFetcher
                     $return_type_candidate,
                     $template_result,
                     $method_id,
-                    \count($stmt->getArgs()),
+                    count($stmt->getArgs()),
                     $codebase
                 );
             } else {
                 $callmap_callables = InternalCallMapHandler::getCallablesFromCallMap((string) $call_map_id);
 
                 if (!$callmap_callables || $callmap_callables[0]->return_type === null) {
-                    throw new \UnexpectedValueException('Shouldn’t get here');
+                    throw new UnexpectedValueException('Shouldn’t get here');
                 }
 
                 $return_type_candidate = $callmap_callables[0]->return_type;
@@ -117,7 +123,7 @@ class MethodCallReturnTypeFetcher
                 $return_type_candidate->ignore_falsable_issues = true;
             }
 
-            $return_type_candidate = \Psalm\Internal\Type\TypeExpander::expandUnion(
+            $return_type_candidate = TypeExpander::expandUnion(
                 $codebase,
                 $return_type_candidate,
                 $fq_class_name,
@@ -142,7 +148,7 @@ class MethodCallReturnTypeFetcher
                 $return_type_candidate = clone $return_type_candidate;
 
                 if ($template_result->lower_bounds) {
-                    $return_type_candidate = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                    $return_type_candidate = TypeExpander::expandUnion(
                         $codebase,
                         $return_type_candidate,
                         $fq_class_name,
@@ -160,11 +166,11 @@ class MethodCallReturnTypeFetcher
                     $return_type_candidate,
                     $template_result,
                     $method_id,
-                    \count($stmt->getArgs()),
+                    count($stmt->getArgs()),
                     $codebase
                 );
 
-                $return_type_candidate = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $return_type_candidate = TypeExpander::expandUnion(
                     $codebase,
                     $return_type_candidate,
                     $self_fq_class_name,
@@ -186,7 +192,7 @@ class MethodCallReturnTypeFetcher
                     $return_type_location = $secondary_return_type_location;
                 }
 
-                $config = \Psalm\Config::getInstance();
+                $config = Config::getInstance();
 
                 // only check the type locally if it's defined externally
                 if ($return_type_location && !$config->isInProjectDirs($return_type_location->file_path)) {
@@ -240,7 +246,7 @@ class MethodCallReturnTypeFetcher
         ?MethodIdentifier $declaring_method_id,
         string $cased_method_id,
         Context $context
-    ) : void {
+    ): void {
         if (!$statements_analyzer->data_flow_graph
             || !$declaring_method_id
         ) {
@@ -248,7 +254,7 @@ class MethodCallReturnTypeFetcher
         }
 
         if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
-            && \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+            && in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
         ) {
             return;
         }
@@ -283,14 +289,14 @@ class MethodCallReturnTypeFetcher
 
             $parent_nodes = $context->vars_in_scope[$var_id]->parent_nodes;
 
-            $unspecialized_parent_nodes = \array_filter(
+            $unspecialized_parent_nodes = array_filter(
                 $parent_nodes,
                 function ($parent_node) {
                     return !$parent_node->specialization_key;
                 }
             );
 
-            $specialized_parent_nodes = \array_filter(
+            $specialized_parent_nodes = array_filter(
                 $parent_nodes,
                 function ($parent_node) {
                     return (bool) $parent_node->specialization_key;
@@ -514,13 +520,13 @@ class MethodCallReturnTypeFetcher
         );
     }
 
-    private static function replaceTemplateTypes(
+    public static function replaceTemplateTypes(
         Type\Union $return_type_candidate,
         TemplateResult $template_result,
         MethodIdentifier $method_id,
         int $arg_count,
         Codebase $codebase
-    ) : Type\Union {
+    ): Type\Union {
         if ($template_result->template_types) {
             $bindable_template_types = $return_type_candidate->getTemplateTypes();
 
@@ -548,6 +554,18 @@ class MethodCallReturnTypeFetcher
                                 )
                             ]
                         ];
+                    } elseif ($template_type->param_name === 'TPhpVersionId') {
+                        $template_result->lower_bounds[$template_type->param_name] = [
+                            'fn-' . strtolower((string) $method_id) => [
+                                new TemplateBound(
+                                    Type::getInt(
+                                        false,
+                                        10000 * $codebase->php_major_version
+                                        + 100 * $codebase->php_minor_version
+                                    )
+                                )
+                            ]
+                        ];
                     } else {
                         $template_result->lower_bounds[$template_type->param_name] = [
                             ($template_type->defining_class) => [
@@ -560,7 +578,7 @@ class MethodCallReturnTypeFetcher
         }
 
         if ($template_result->lower_bounds) {
-            $return_type_candidate = \Psalm\Internal\Type\TypeExpander::expandUnion(
+            $return_type_candidate = TypeExpander::expandUnion(
                 $codebase,
                 $return_type_candidate,
                 null,

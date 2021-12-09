@@ -1,6 +1,7 @@
 <?php
 namespace Psalm\Internal\Provider;
 
+use Closure;
 use Psalm\CodeLocation;
 use Psalm\Plugin\EventHandler\Event\MethodExistenceProviderEvent;
 use Psalm\Plugin\EventHandler\MethodExistenceProviderInterface;
@@ -15,7 +16,7 @@ class MethodExistenceProvider
     /**
      * @var array<
      *   lowercase-string,
-     *   array<\Closure(MethodExistenceProviderEvent) : ?bool>
+     *   array<Closure(MethodExistenceProviderEvent): ?bool>
      * >
      */
     private static $handlers = [];
@@ -23,12 +24,12 @@ class MethodExistenceProvider
     /**
      * @var array<
      *   lowercase-string,
-     *   array<\Closure(
+     *   array<Closure(
      *     string,
      *     string,
      *     ?StatementsSource=,
      *     ?CodeLocation
-     *   ) : ?bool>
+     *   ): ?bool>
      * >
      */
     private static $legacy_handlers = [];
@@ -45,13 +46,13 @@ class MethodExistenceProvider
     public function registerClass(string $class): void
     {
         if (is_subclass_of($class, LegacyMethodExistenceProviderInterface::class, true)) {
-            $callable = \Closure::fromCallable([$class, 'doesMethodExist']);
+            $callable = Closure::fromCallable([$class, 'doesMethodExist']);
 
             foreach ($class::getClassLikeNames() as $fq_classlike_name) {
                 $this->registerLegacyClosure($fq_classlike_name, $callable);
             }
         } elseif (is_subclass_of($class, MethodExistenceProviderInterface::class, true)) {
-            $callable = \Closure::fromCallable([$class, 'doesMethodExist']);
+            $callable = Closure::fromCallable([$class, 'doesMethodExist']);
 
             foreach ($class::getClassLikeNames() as $fq_classlike_name) {
                 $this->registerClosure($fq_classlike_name, $callable);
@@ -60,27 +61,27 @@ class MethodExistenceProvider
     }
 
     /**
-     * @param \Closure(MethodExistenceProviderEvent) : ?bool $c
+     * @param Closure(MethodExistenceProviderEvent): ?bool $c
      */
-    public function registerClosure(string $fq_classlike_name, \Closure $c): void
+    public function registerClosure(string $fq_classlike_name, Closure $c): void
     {
         self::$handlers[strtolower($fq_classlike_name)][] = $c;
     }
 
     /**
-     * @param \Closure(
+     * @param Closure(
      *     string,
      *     string,
      *     ?StatementsSource=,
      *     ?CodeLocation
-     *   ) : ?bool $c
+     *   ): ?bool $c
      */
-    public function registerLegacyClosure(string $fq_classlike_name, \Closure $c): void
+    public function registerLegacyClosure(string $fq_classlike_name, Closure $c): void
     {
         self::$legacy_handlers[strtolower($fq_classlike_name)][] = $c;
     }
 
-    public function has(string $fq_classlike_name) : bool
+    public function has(string $fq_classlike_name): bool
     {
         return isset(self::$handlers[strtolower($fq_classlike_name)]) ||
             isset(self::$legacy_handlers[strtolower($fq_classlike_name)]);

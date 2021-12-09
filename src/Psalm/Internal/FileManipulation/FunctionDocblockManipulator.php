@@ -11,9 +11,11 @@ use Psalm\DocComment;
 use Psalm\FileManipulation;
 use Psalm\Internal\Analyzer\CommentAnalyzer;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
+use Psalm\Internal\Scanner\ParsedDocblock;
 
 use function array_merge;
 use function count;
+use function is_string;
 use function ltrim;
 use function preg_match;
 use function reset;
@@ -133,7 +135,7 @@ class FunctionDocblockManipulator
 
         foreach ($stmt->params as $param) {
             if ($param->var instanceof PhpParser\Node\Expr\Variable
-                && \is_string($param->var->name)
+                && is_string($param->var->name)
             ) {
                 $this->param_offsets[$param->var->name] = (int) $param->getAttribute('startFilePos');
 
@@ -326,7 +328,7 @@ class FunctionDocblockManipulator
         if ($docblock) {
             $parsed_docblock = DocComment::parsePreservingLength($docblock);
         } else {
-            $parsed_docblock = new \Psalm\Internal\Scanner\ParsedDocblock('', []);
+            $parsed_docblock = new ParsedDocblock('', []);
         }
 
         $modified_docblock = false;
@@ -520,7 +522,7 @@ class FunctionDocblockManipulator
         return $file_manipulations;
     }
 
-    public function makePure() : void
+    public function makePure(): void
     {
         $this->is_pure = true;
     }
@@ -533,7 +535,7 @@ class FunctionDocblockManipulator
     /**
      * @param array<string, array<int, FunctionDocblockManipulator>> $manipulators
      */
-    public static function addManipulators(array $manipulators) : void
+    public static function addManipulators(array $manipulators): void
     {
         self::$manipulators = array_merge($manipulators, self::$manipulators);
     }

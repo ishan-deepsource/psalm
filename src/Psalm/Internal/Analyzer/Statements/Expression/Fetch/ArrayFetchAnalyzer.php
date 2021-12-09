@@ -3,13 +3,18 @@ namespace Psalm\Internal\Analyzer\Statements\Expression\Fetch;
 
 use PhpParser;
 use Psalm\CodeLocation;
+use Psalm\Codebase;
 use Psalm\Context;
+use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\MethodCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Internal\Codebase\TaintFlowGraph;
+use Psalm\Internal\Codebase\VariableUseGraph;
 use Psalm\Internal\DataFlow\DataFlowNode;
+use Psalm\Internal\Type\Comparator\TypeComparisonResult;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Internal\Type\TemplateInferredTypeReplacer;
 use Psalm\Internal\Type\TemplateResult;
@@ -61,8 +66,10 @@ use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TSingleLetter;
 use Psalm\Type\Atomic\TString;
 use Psalm\Type\Atomic\TTemplateParam;
+use UnexpectedValueException;
 
 use function array_keys;
+use function array_map;
 use function array_pop;
 use function array_values;
 use function count;
@@ -82,7 +89,7 @@ class ArrayFetchAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\ArrayDimFetch $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $array_var_id = ExpressionIdentifier::getArrayVarId(
             $stmt->var,
             $statements_analyzer->getFQCLN(),
@@ -168,15 +175,13 @@ class ArrayFetchAnalyzer
         if ($stmt_var_type) {
             if ($stmt_var_type->isNull()) {
                 if (!$context->inside_isset) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new NullArrayAccess(
                             'Cannot access array value on null variable ' . $array_var_id,
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
 
                 $stmt_type = $statements_analyzer->node_data->getType($stmt);
@@ -292,16 +297,14 @@ class ArrayFetchAnalyzer
                 && !$context->inside_unset
                 && ($stmt_var_type && !$stmt_var_type->hasMixed())
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyUndefinedArrayOffset(
                         'Possibly undefined array key ' . $keyed_array_var_id
                             . ' on ' . $stmt_var_type->getId(),
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             $stmt_type->possibly_undefined = false;
@@ -342,13 +345,13 @@ class ArrayFetchAnalyzer
         Type\Union $stmt_type,
         Type\Union $offset_type,
         ?Context $context = null
-    ) : void {
+    ): void {
         if ($statements_analyzer->data_flow_graph
             && ($stmt_var_type = $statements_analyzer->node_data->getType($var))
             && $stmt_var_type->parent_nodes
         ) {
             if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
-                && \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+                && in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
             ) {
                 $stmt_var_type->parent_nodes = [];
                 return;
@@ -478,15 +481,13 @@ class ArrayFetchAnalyzer
         $array_access_type = null;
 
         if ($offset_type->isNull()) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new NullArrayOffset(
                     'Cannot access value on variable ' . $array_var_id . ' using null offset',
                     new CodeLocation($statements_analyzer->getSource(), $stmt)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
 
             if ($in_assignment) {
                 $offset_type->removeType('null');
@@ -496,16 +497,14 @@ class ArrayFetchAnalyzer
 
         if ($offset_type->isNullable() && !$context->inside_isset) {
             if (!$offset_type->ignore_nullable_issues) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyNullArrayOffset(
                         'Cannot access value on variable ' . $array_var_id
                             . ' using possibly null offset ' . $offset_type,
                         new CodeLocation($statements_analyzer->getSource(), $stmt->var)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             if ($in_assignment) {
@@ -566,31 +565,27 @@ class ArrayFetchAnalyzer
                     if ($replacement_type) {
                         $array_access_type = Type::combineUnionTypes($array_access_type, clone $replacement_type);
                     } else {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new PossiblyNullArrayAssignment(
                                 'Cannot access array value on possibly null variable ' . $array_var_id .
                                     ' of type ' . $array_type,
                                 new CodeLocation($statements_analyzer->getSource(), $stmt)
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
 
                         $array_access_type = new Type\Union([new TEmpty]);
                     }
                 } else {
                     if (!$context->inside_isset && !MethodCallAnalyzer::hasNullsafe($stmt->var)) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new PossiblyNullArrayAccess(
                                 'Cannot access array value on possibly null variable ' . $array_var_id .
                                     ' of type ' . $array_type,
                                 new CodeLocation($statements_analyzer->getSource(), $stmt)
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
 
                     $array_access_type = Type::combineUnionTypes($array_access_type, Type::getNull());
@@ -649,8 +644,8 @@ class ArrayFetchAnalyzer
                 && !$context->collect_mutations
                 && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                 && (!(($parent_source = $statements_analyzer->getSource())
-                        instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                    || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                        instanceof FunctionLikeAnalyzer)
+                    || !$parent_source->getSource() instanceof TraitAnalyzer)
             ) {
                 $codebase->analyzer->incrementNonMixedCount($statements_analyzer->getFilePath());
             }
@@ -704,27 +699,23 @@ class ArrayFetchAnalyzer
                 }
             } else {
                 if ($in_assignment) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidArrayAssignment(
                             'Cannot access array value on non-array variable ' .
                             $array_var_id . ' of type ' . $non_array_types[0],
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidArrayAccess(
                             'Cannot access array value on non-array variable ' .
                             $array_var_id . ' of type ' . $non_array_types[0],
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
 
                 $array_access_type = Type::getMixed();
@@ -736,28 +727,26 @@ class ArrayFetchAnalyzer
                 && !$context->collect_mutations
                 && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                 && (!(($parent_source = $statements_analyzer->getSource())
-                        instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                    || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                        instanceof FunctionLikeAnalyzer)
+                    || !$parent_source->getSource() instanceof TraitAnalyzer)
             ) {
                 $codebase->analyzer->incrementMixedCount($statements_analyzer->getFilePath());
             }
 
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new MixedArrayOffset(
                     'Cannot access value on variable ' . $array_var_id . ' using mixed offset',
                     new CodeLocation($statements_analyzer->getSource(), $stmt)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         } else {
             if (!$context->collect_initializations
                 && !$context->collect_mutations
                 && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                 && (!(($parent_source = $statements_analyzer->getSource())
-                        instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                    || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                        instanceof FunctionLikeAnalyzer)
+                    || !$parent_source->getSource() instanceof TraitAnalyzer)
             ) {
                 $codebase->analyzer->incrementNonMixedCount($statements_analyzer->getFilePath());
             }
@@ -775,16 +764,14 @@ class ArrayFetchAnalyzer
                     // do nothing
                 } elseif ($has_valid_expected_offset && $has_valid_absolute_offset) {
                     if (!$context->inside_unset) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new PossiblyInvalidArrayOffset(
                                 'Cannot access value on variable ' . $array_var_id . ' ' . $used_offset
                                     . ', expecting ' . $invalid_offset_type,
                                 new CodeLocation($statements_analyzer->getSource(), $stmt)
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 } else {
                     $good_types = [];
@@ -826,16 +813,14 @@ class ArrayFetchAnalyzer
                         );
                     }
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidArrayOffset(
                             'Cannot access value on variable ' . $array_var_id . ' ' . $used_offset
                                 . ', expecting ' . $invalid_offset_type,
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
         }
@@ -863,7 +848,7 @@ class ArrayFetchAnalyzer
         PhpParser\Node\Expr\ArrayDimFetch $stmt,
         Context $context,
         StatementsAnalyzer $statements_analyzer
-    ) : void {
+    ): void {
         if ($context->inside_isset || $context->inside_unset) {
             return;
         }
@@ -894,7 +879,7 @@ class ArrayFetchAnalyzer
             }
 
             if (!$found_match) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyUndefinedIntArrayOffset(
                         'Possibly undefined array offset \''
                             . $offset_type->getId() . '\' '
@@ -904,9 +889,7 @@ class ArrayFetchAnalyzer
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
     }
@@ -918,7 +901,7 @@ class ArrayFetchAnalyzer
         PhpParser\Node\Expr\ArrayDimFetch $stmt,
         Context $context,
         StatementsAnalyzer $statements_analyzer
-    ) : void {
+    ): void {
         if ($context->inside_isset || $context->inside_unset) {
             return;
         }
@@ -944,7 +927,7 @@ class ArrayFetchAnalyzer
             }
 
             if (!$found_match) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyUndefinedStringArrayOffset(
                         'Possibly undefined array offset \''
                             . $offset_type->getId() . '\' '
@@ -954,9 +937,7 @@ class ArrayFetchAnalyzer
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
     }
@@ -1008,7 +989,7 @@ class ArrayFetchAnalyzer
     public static function handleMixedArrayAccess(
         Context $context,
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         bool $in_assignment,
         ?string $array_var_id,
         PhpParser\Node\Expr\ArrayDimFetch $stmt,
@@ -1019,38 +1000,34 @@ class ArrayFetchAnalyzer
             && !$context->collect_mutations
             && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
             && (!(($parent_source = $statements_analyzer->getSource())
-                    instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                    instanceof FunctionLikeAnalyzer)
+                || !$parent_source->getSource() instanceof TraitAnalyzer)
         ) {
             $codebase->analyzer->incrementMixedCount($statements_analyzer->getFilePath());
         }
 
         if (!$context->inside_isset) {
             if ($in_assignment) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new MixedArrayAssignment(
                         'Cannot access array value on mixed variable ' . $array_var_id,
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new MixedArrayAccess(
                         'Cannot access array value on mixed variable ' . $array_var_id,
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
 
         if (($data_flow_graph = $statements_analyzer->data_flow_graph)
-            && $data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
+            && $data_flow_graph instanceof VariableUseGraph
             && ($stmt_var_type = $statements_analyzer->node_data->getType($stmt->var))
         ) {
             if ($stmt_var_type->parent_nodes) {
@@ -1097,7 +1074,7 @@ class ArrayFetchAnalyzer
         ?Type\Union $replacement_type,
         Type\Union &$offset_type,
         Type\Atomic $original_type,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         ?string $array_var_id,
         Context $context,
         StatementsAnalyzer $statements_analyzer,
@@ -1229,7 +1206,7 @@ class ArrayFetchAnalyzer
      */
     private static function handleArrayAccessOnTArray(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         Context $context,
         PhpParser\Node\Expr\ArrayDimFetch $stmt,
         Type\Union $array_type,
@@ -1263,7 +1240,7 @@ class ArrayFetchAnalyzer
                 }
             }
 
-            $union_comparison_results = new \Psalm\Internal\Type\Comparator\TypeComparisonResult();
+            $union_comparison_results = new TypeComparisonResult();
 
             if ($original_type instanceof TTemplateParam && $templated_offset_type) {
                 foreach ($templated_offset_type->as->getAtomicTypes() as $offset_as) {
@@ -1329,16 +1306,14 @@ class ArrayFetchAnalyzer
                     if ($union_comparison_results->type_coerced_from_mixed
                         && !$offset_type->isMixed()
                     ) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new MixedArrayTypeCoercion(
                                 'Coercion from array offset type \'' . $offset_type->getId() . '\' '
                                 . 'to the expected type \'' . $expected_offset_type->getId() . '\'',
                                 new CodeLocation($statements_analyzer->getSource(), $stmt)
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     } else {
                         $expected_offset_types[] = $expected_offset_type->getId();
                     }
@@ -1378,15 +1353,13 @@ class ArrayFetchAnalyzer
             && !$in_assignment
             && !$context->inside_isset
         ) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new EmptyArrayAccess(
                     'Cannot access value on empty array variable ' . $array_var_id,
                     new CodeLocation($statements_analyzer->getSource(), $stmt)
                 ),
                 $statements_analyzer->getSuppressedIssues()
-            )) {
-                //return Type::getMixed(true);
-            }
+            );
 
             if (!IssueBuffer::isRecording()) {
                 $array_access_type = Type::getMixed(true);
@@ -1395,7 +1368,7 @@ class ArrayFetchAnalyzer
     }
 
     private static function handleArrayAccessOnClassStringMap(
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         Type\Atomic\TClassStringMap $type,
         Type\Union $offset_type,
         ?Type\Union $replacement_type,
@@ -1496,7 +1469,7 @@ class ArrayFetchAnalyzer
      */
     private static function handleArrayAccessOnKeyedArray(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         array &$key_values,
         ?Type\Union $replacement_type,
         ?Type\Union &$array_access_type,
@@ -1581,7 +1554,7 @@ class ArrayFetchAnalyzer
                         if ($object_like_keys) {
                             $formatted_keys = implode(
                                 ', ',
-                                \array_map(
+                                array_map(
                                     function ($key) {
                                         return is_int($key) ? $key : '\'' . $key . '\'';
                                     },
@@ -1605,7 +1578,7 @@ class ArrayFetchAnalyzer
                 ? Type::getArrayKey()
                 : $generic_key_type;
 
-            $union_comparison_results = new \Psalm\Internal\Type\Comparator\TypeComparisonResult();
+            $union_comparison_results = new TypeComparisonResult();
 
             $is_contained = UnionTypeComparator::isContainedBy(
                 $codebase,
@@ -1699,7 +1672,7 @@ class ArrayFetchAnalyzer
      */
     private static function handleArrayAccessOnList(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\ArrayDimFetch $stmt,
         TList $type,
         Type\Union $offset_type,
@@ -1910,7 +1883,7 @@ class ArrayFetchAnalyzer
      */
     private static function handleArrayAccessOnString(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\ArrayDimFetch $stmt,
         bool $in_assignment,
         Context $context,
@@ -1927,28 +1900,26 @@ class ArrayFetchAnalyzer
                     && !$context->collect_mutations
                     && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                     && (!(($parent_source = $statements_analyzer->getSource())
-                            instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                        || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                            instanceof FunctionLikeAnalyzer)
+                        || !$parent_source->getSource() instanceof TraitAnalyzer)
                 ) {
                     $codebase->analyzer->incrementMixedCount($statements_analyzer->getFilePath());
                 }
 
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new MixedStringOffsetAssignment(
                         'Right-hand-side of string offset assignment cannot be mixed',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
                 if (!$context->collect_initializations
                     && !$context->collect_mutations
                     && $statements_analyzer->getFilePath() === $statements_analyzer->getRootFilePath()
                     && (!(($parent_source = $statements_analyzer->getSource())
-                            instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer)
-                        || !$parent_source->getSource() instanceof \Psalm\Internal\Analyzer\TraitAnalyzer)
+                            instanceof FunctionLikeAnalyzer)
+                        || !$parent_source->getSource() instanceof TraitAnalyzer)
                 ) {
                     $codebase->analyzer->incrementNonMixedCount($statements_analyzer->getFilePath());
                 }
@@ -1968,7 +1939,7 @@ class ArrayFetchAnalyzer
                 }
 
                 if (!$valid_offsets) {
-                    throw new \UnexpectedValueException('This is weird');
+                    throw new UnexpectedValueException('This is weird');
                 }
 
                 $valid_offset_type = new Type\Union($valid_offsets);
@@ -2004,7 +1975,7 @@ class ArrayFetchAnalyzer
     private static function checkArrayOffsetType(
         Type\Union $offset_type,
         array $offset_types,
-        \Psalm\Codebase $codebase
+        Codebase $codebase
     ): bool {
         $has_valid_absolute_offset = false;
         foreach ($offset_types as $atomic_offset_type) {

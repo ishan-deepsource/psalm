@@ -1,14 +1,39 @@
 <?php
 namespace {
     interface UnitEnum {
+        /** @var non-empty-string $name */
+        public readonly string $name;
+
         /** @return non-empty-list<static> */
         public static function cases(): array;
     }
 
-    #[Attribute]
-    final class ReturnTypeWillChange
+    interface BackedEnum
     {
-        public function __construct() {}
+        public readonly int|string $value;
+        public static function from(string|int $value): static;
+        public static function tryFrom(string|int $value): ?static;
+    }
+
+    class ReflectionEnum extends ReflectionClass implements Reflector
+    {
+        public function getBackingType(): ?ReflectionType;
+        public function getCase(string $name): ReflectionEnumUnitCase;
+        /** @return list<ReflectionEnumUnitCase> */
+        public function getCases(): array;
+        public function hasCase(string $name): bool;
+        public function isBacked(): bool;
+    }
+
+    class ReflectionEnumUnitCase extends ReflectionClassConstant implements Reflector
+    {
+        public function getEnum(): ReflectionEnum;
+        public function getValue(): UnitEnum;
+    }
+
+    class ReflectionEnumBackedCase extends ReflectionEnumUnitCase implements Reflector
+    {
+        public function getBackingValue(): int|string;
     }
 }
 

@@ -4,6 +4,7 @@ namespace Psalm\Internal\Analyzer\FunctionLike;
 use PhpParser;
 use Psalm\Codebase;
 use Psalm\Internal\Analyzer\Statements\Block\ForeachAnalyzer;
+use Psalm\Internal\Provider\NodeDataProvider;
 use Psalm\Type;
 use Psalm\Type\Atomic;
 
@@ -28,7 +29,7 @@ class ReturnTypeCollector
      */
     public static function getReturnTypes(
         Codebase $codebase,
-        \Psalm\Internal\Provider\NodeDataProvider $nodes,
+        NodeDataProvider $nodes,
         array $stmts,
         array &$yield_types,
         bool $collapse_types = false
@@ -242,7 +243,7 @@ class ReturnTypeCollector
         Codebase $codebase,
         array $return_types,
         array $yield_types
-    ) : array {
+    ): array {
         $key_type = null;
         $value_type = null;
 
@@ -294,7 +295,7 @@ class ReturnTypeCollector
      */
     protected static function getYieldTypeFromExpression(
         PhpParser\Node\Expr $stmt,
-        \Psalm\Internal\Provider\NodeDataProvider $nodes
+        NodeDataProvider $nodes
     ): array {
         if ($stmt instanceof PhpParser\Node\Expr\Yield_) {
             $key_type = null;
@@ -343,11 +344,24 @@ class ReturnTypeCollector
 
         if ($stmt instanceof PhpParser\Node\Expr\MethodCall
             || $stmt instanceof PhpParser\Node\Expr\FuncCall
-            || $stmt instanceof PhpParser\Node\Expr\StaticCall) {
+            || $stmt instanceof PhpParser\Node\Expr\StaticCall
+            || $stmt instanceof PhpParser\Node\Expr\New_) {
             $yield_types = [];
 
             foreach ($stmt->getArgs() as $arg) {
                 $yield_types = array_merge($yield_types, self::getYieldTypeFromExpression($arg->value, $nodes));
+            }
+
+            return $yield_types;
+        }
+
+        if ($stmt instanceof PhpParser\Node\Expr\Array_) {
+            $yield_types = [];
+
+            foreach ($stmt->items as $item) {
+                if ($item instanceof PhpParser\Node\Expr\ArrayItem) {
+                    $yield_types = array_merge($yield_types, self::getYieldTypeFromExpression($item->value, $nodes));
+                }
             }
 
             return $yield_types;

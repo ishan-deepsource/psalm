@@ -44,6 +44,7 @@ use Psalm\Type\Atomic\TTrue;
 
 use function array_values;
 use function get_class;
+use function is_numeric;
 use function strtolower;
 
 /**
@@ -58,7 +59,7 @@ class ScalarTypeComparator
         bool $allow_interface_equality = false,
         bool $allow_float_int_equality = true,
         ?TypeComparisonResult $atomic_comparison_result = null
-    ) : bool {
+    ): bool {
         if (get_class($container_type_part) === TString::class
             && $input_type_part instanceof TString
         ) {
@@ -540,7 +541,7 @@ class ScalarTypeComparator
                 || $input_type_part instanceof THtmlEscapedString)
         ) {
             if ($container_type_part instanceof TLiteralString) {
-                if (\is_numeric($container_type_part->value) && $atomic_comparison_result) {
+                if (is_numeric($container_type_part->value) && $atomic_comparison_result) {
                     $atomic_comparison_result->type_coerced = true;
                 }
 
@@ -555,7 +556,7 @@ class ScalarTypeComparator
                 || $container_type_part instanceof THtmlEscapedString)
         ) {
             if ($input_type_part instanceof TLiteralString) {
-                return \is_numeric($input_type_part->value);
+                return is_numeric($input_type_part->value);
             }
             if ($atomic_comparison_result) {
                 $atomic_comparison_result->type_coerced = true;
@@ -580,6 +581,11 @@ class ScalarTypeComparator
                 ) {
                     return false;
                 }
+            }
+
+            if (!$input_callable) {
+                //we could not find a callable for the input type, so the input is not contained in the container
+                return false;
             }
 
             return true;

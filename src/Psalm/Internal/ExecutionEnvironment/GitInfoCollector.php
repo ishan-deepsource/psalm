@@ -4,6 +4,7 @@ namespace Psalm\Internal\ExecutionEnvironment;
 use Psalm\SourceControl\Git\CommitInfo;
 use Psalm\SourceControl\Git\GitInfo;
 use Psalm\SourceControl\Git\RemoteInfo;
+use RuntimeException;
 
 use function array_keys;
 use function array_unique;
@@ -40,7 +41,7 @@ class GitInfoCollector
     /**
      * Collect git repository info.
      */
-    public function collect() : GitInfo
+    public function collect(): GitInfo
     {
         $branch = $this->collectBranch();
         $commit = $this->collectCommit();
@@ -52,9 +53,9 @@ class GitInfoCollector
     /**
      * Collect branch name.
      *
-     * @throws \RuntimeException
+     * @throws RuntimeException
      */
-    protected function collectBranch() : string
+    protected function collectBranch(): string
     {
         $branchesResult = $this->executor->execute('git branch');
 
@@ -66,20 +67,20 @@ class GitInfoCollector
             }
         }
 
-        throw new \RuntimeException();
+        throw new RuntimeException();
     }
 
     /**
      * Collect commit info.
      *
-     * @throws \RuntimeException
+     * @throws RuntimeException
      */
-    protected function collectCommit() : CommitInfo
+    protected function collectCommit(): CommitInfo
     {
         $commitResult = $this->executor->execute('git log -1 --pretty=format:%H%n%aN%n%ae%n%cN%n%ce%n%s%n%at');
 
         if (count($commitResult) !== 7 || array_keys($commitResult) !== range(0, 6)) {
-            throw new \RuntimeException();
+            throw new RuntimeException();
         }
 
         $commit = new CommitInfo();
@@ -97,7 +98,7 @@ class GitInfoCollector
     /**
      * Collect remotes info.
      *
-     * @throws \RuntimeException
+     * @throws RuntimeException
      *
      * @return list<RemoteInfo>
      */
@@ -106,7 +107,7 @@ class GitInfoCollector
         $remotesResult = $this->executor->execute('git remote -v');
 
         if (count($remotesResult) === 0) {
-            throw new \RuntimeException();
+            throw new RuntimeException();
         }
 
         // parse command result

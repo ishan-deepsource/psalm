@@ -4,35 +4,40 @@ namespace Psalm\Internal\Provider\ReturnTypeProvider;
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Internal\Analyzer\Statements\Expression\CallAnalyzer;
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
+use Psalm\Internal\MethodIdentifier;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Issue\InvalidArgument;
 use Psalm\IssueBuffer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
 
 use function count;
 use function explode;
 use function in_array;
+use function reset;
 use function strpos;
 use function strtolower;
+use function substr;
 
-class ArrayReduceReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+class ArrayReduceReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return ['array_reduce'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Type\Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
         $context = $event->getContext();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$statements_source instanceof StatementsAnalyzer) {
             return Type::getMixed();
         }
 
@@ -91,7 +96,7 @@ class ArrayReduceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
         $initial_type = $reduce_return_type;
 
         if ($closure_types = $function_call_arg_type->getClosureTypes()) {
-            $closure_atomic_type = \reset($closure_types);
+            $closure_atomic_type = reset($closure_types);
 
             $closure_return_type = $closure_atomic_type->return_type ?: Type::getMixed();
 
@@ -103,15 +108,13 @@ class ArrayReduceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
 
             if ($closure_atomic_type->params !== null) {
                 if (count($closure_atomic_type->params) < 1) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidArgument(
                             'The closure passed to array_reduce at least one parameter',
                             new CodeLocation($statements_source, $function_call_arg)
                         ),
                         $statements_source->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
 
                     return Type::getMixed();
                 }
@@ -136,7 +139,7 @@ class ArrayReduceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
                             )
                         )
                 ) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidArgument(
                             'The first param of the closure passed to array_reduce must take '
                                 . $reduce_return_type . ' but only accepts ' . $carry_param->type,
@@ -144,9 +147,7 @@ class ArrayReduceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
                                 ?: new CodeLocation($statements_source, $function_call_arg)
                         ),
                         $statements_source->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
 
                     return Type::getMixed();
                 }
@@ -161,7 +162,7 @@ class ArrayReduceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
                         $item_param->type
                     )
                 ) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidArgument(
                             'The second param of the closure passed to array_reduce must take '
                                 . $array_arg_atomic_type->type_params[1] . ' but only accepts ' . $item_param->type,
@@ -169,9 +170,7 @@ class ArrayReduceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
                                 ?: new CodeLocation($statements_source, $function_call_arg)
                         ),
                         $statements_source->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
 
                     return Type::getMixed();
                 }
@@ -212,7 +211,7 @@ class ArrayReduceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
                     } elseif ($mapping_function_id_part) {
                         if (strpos($mapping_function_id_part, '::') !== false) {
                             if ($mapping_function_id_part[0] === '$') {
-                                $mapping_function_id_part = \substr($mapping_function_id_part, 1);
+                                $mapping_function_id_part = substr($mapping_function_id_part, 1);
                             }
 
                             [$callable_fq_class_name, $method_name] = explode('::', $mapping_function_id_part);
@@ -228,7 +227,7 @@ class ArrayReduceReturnTypeProvider implements \Psalm\Plugin\EventHandler\Functi
                                 continue;
                             }
 
-                            $method_id = new \Psalm\Internal\MethodIdentifier(
+                            $method_id = new MethodIdentifier(
                                 $callable_fq_class_name,
                                 strtolower($method_name)
                             );

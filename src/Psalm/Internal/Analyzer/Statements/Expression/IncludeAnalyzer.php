@@ -6,14 +6,18 @@ use Psalm\CodeLocation;
 use Psalm\Config;
 use Psalm\Context;
 use Psalm\Exception\FileIncludeException;
+use Psalm\Exception\UnpreparedAnalysisException;
+use Psalm\Internal\Analyzer\FileAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Codebase\TaintFlowGraph;
 use Psalm\Internal\DataFlow\TaintSink;
+use Psalm\Internal\Provider\NodeDataProvider;
 use Psalm\Issue\MissingFile;
 use Psalm\Issue\UnresolvableInclude;
 use Psalm\IssueBuffer;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
+use Psalm\Type\TaintKind;
 
 use function constant;
 use function defined;
@@ -47,7 +51,7 @@ class IncludeAnalyzer
         PhpParser\Node\Expr\Include_ $stmt,
         Context $context,
         ?Context $global_context = null
-    ) : bool {
+    ): bool {
         $codebase = $statements_analyzer->getCodebase();
         $config = $codebase->config;
 
@@ -108,7 +112,7 @@ class IncludeAnalyzer
         if ($stmt_expr_type
             && $statements_analyzer->data_flow_graph instanceof TaintFlowGraph
             && $stmt_expr_type->parent_nodes
-            && !\in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+            && !in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
         ) {
             $arg_location = new CodeLocation($statements_analyzer->getSource(), $stmt->expr);
 
@@ -120,7 +124,7 @@ class IncludeAnalyzer
                 $arg_location
             );
 
-            $include_param_sink->taints = [\Psalm\Type\TaintKind::INPUT_INCLUDE];
+            $include_param_sink->taints = [TaintKind::INPUT_INCLUDE];
 
             $statements_analyzer->data_flow_graph->addSink($include_param_sink);
 
@@ -172,7 +176,7 @@ class IncludeAnalyzer
                     str_repeat('  ', $nesting) . 'checking ' . $file_name . PHP_EOL
                 );
 
-                $include_file_analyzer = new \Psalm\Internal\Analyzer\FileAnalyzer(
+                $include_file_analyzer = new FileAnalyzer(
                     $current_file_analyzer->project_analyzer,
                     $path_to_file,
                     $file_name
@@ -199,7 +203,7 @@ class IncludeAnalyzer
                         $context,
                         $global_context
                     );
-                } catch (\Psalm\Exception\UnpreparedAnalysisException $e) {
+                } catch (UnpreparedAnalysisException $e) {
                     if ($config->skip_checks_on_unresolvable_includes) {
                         $context->check_classes = false;
                         $context->check_variables = false;
@@ -226,30 +230,26 @@ class IncludeAnalyzer
 
             $source = $statements_analyzer->getSource();
 
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new MissingFile(
                     'Cannot find file ' . $path_to_file . ' to include',
                     new CodeLocation($source, $stmt)
                 ),
                 $source->getSuppressedIssues()
-            )) {
-                // fall through
-            }
+            );
         } else {
             $var_id = ExpressionIdentifier::getArrayVarId($stmt->expr, null);
 
             if (!$var_id || !isset($context->phantom_files[$var_id])) {
                 $source = $statements_analyzer->getSource();
 
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new UnresolvableInclude(
                         'Cannot resolve the given expression to a file path',
                         new CodeLocation($source, $stmt)
                     ),
                     $source->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         }
 
@@ -267,7 +267,7 @@ class IncludeAnalyzer
      */
     public static function getPathTo(
         PhpParser\Node\Expr $stmt,
-        ?\Psalm\Internal\Provider\NodeDataProvider $type_provider,
+        ?NodeDataProvider $type_provider,
         ?StatementsAnalyzer $statements_analyzer,
         string $file_name,
         Config $config
@@ -398,7 +398,7 @@ class IncludeAnalyzer
     /**
      * @psalm-pure
      */
-    public static function normalizeFilePath(string $path_to_file) : string
+    public static function normalizeFilePath(string $path_to_file): string
     {
         // replace all \ with / for normalization
         $path_to_file = str_replace('\\', '/', $path_to_file);

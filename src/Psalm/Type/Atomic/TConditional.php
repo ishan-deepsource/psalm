@@ -4,12 +4,13 @@ namespace Psalm\Type\Atomic;
 use Psalm\Codebase;
 use Psalm\Internal\Type\TemplateInferredTypeReplacer;
 use Psalm\Internal\Type\TemplateResult;
+use Psalm\Type\Atomic;
 use Psalm\Type\Union;
 
 /**
  * Internal representation of a conditional return type in phpdoc. For example ($param1 is int ? int : string)
  */
-class TConditional extends \Psalm\Type\Atomic
+class TConditional extends Atomic
 {
     /**
      * @var string
@@ -123,7 +124,7 @@ class TConditional extends \Psalm\Type\Atomic
         return '';
     }
 
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return [$this->conditional_type, $this->if_type, $this->else_type];
     }
@@ -136,7 +137,7 @@ class TConditional extends \Psalm\Type\Atomic
     public function replaceTemplateTypesWithArgTypes(
         TemplateResult $template_result,
         ?Codebase $codebase
-    ) : void {
+    ): void {
         TemplateInferredTypeReplacer::replace(
             $this->conditional_type,
             $template_result,

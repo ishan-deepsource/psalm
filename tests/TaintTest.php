@@ -2,9 +2,13 @@
 namespace Psalm\Tests;
 
 use Psalm\Context;
+use Psalm\Exception\CodeException;
 use Psalm\Internal\Analyzer\IssueData;
 use Psalm\IssueBuffer;
 
+use function array_map;
+use function preg_quote;
+use function strpos;
 use function trim;
 
 use const DIRECTORY_SEPARATOR;
@@ -17,7 +21,7 @@ class TaintTest extends TestCase
     public function testValidCode(string $code): void
     {
         $test_name = $this->getTestName();
-        if (\strpos($test_name, 'SKIPPED-') !== false) {
+        if (strpos($test_name, 'SKIPPED-') !== false) {
             $this->markTestSkipped('Skipped due to a bug.');
         }
 
@@ -40,12 +44,12 @@ class TaintTest extends TestCase
      */
     public function testInvalidCode(string $code, string $error_message): void
     {
-        if (\strpos($this->getTestName(), 'SKIPPED-') !== false) {
+        if (strpos($this->getTestName(), 'SKIPPED-') !== false) {
             $this->markTestSkipped();
         }
 
-        $this->expectException(\Psalm\Exception\CodeException::class);
-        $this->expectExceptionMessageRegExp('/\b' . \preg_quote($error_message, '/') . '\b/');
+        $this->expectException(CodeException::class);
+        $this->expectExceptionMessageRegExp('/\b' . preg_quote($error_message, '/') . '\b/');
 
         $file_path = self::$src_dir_path . 'somefile.php';
 
@@ -616,6 +620,21 @@ class TaintTest extends TestCase
                     echo foo($_GET["foo"], true);
                     echo foo($_GET["foo"]);'
             ],
+            'NoTaintForInt' => [
+                '<?php // --taint-analysis
+
+                    function foo(int $value): void {
+                        echo $value;
+                    }
+
+                    foo($_GET["foo"]);
+
+                    function bar(): int {
+                        return $_GET["foo"];
+                    }
+
+                    echo bar();'
+            ],
             'conditionallyEscapedTaintPassedTrueStaticCall' => [
                 '<?php
                     class U {
@@ -643,6 +662,48 @@ class TaintTest extends TestCase
                     }
 
                     takesArray(["good" => $_GET["bad"]]);'
+            ],
+            'resultOfComparisonIsNotTainted' => [
+                '<?php
+                    $input = $_GET["foo"];
+                    $var = $input === "x";
+                    var_dump($var);'
+            ],
+            'resultOfPlusIsNotTainted' => [
+                '<?php
+                    $input = $_GET["foo"];
+                    $var = $input + 1;
+                    var_dump($var);'
+            ],
+            'NoTaintForIntTypeHintUsingAnnotatedSink' => [
+                '<?php // --taint-analysis
+                    function fetch(int $id): string
+                    {
+                        return query("SELECT * FROM table WHERE id=" . $id);
+                    }
+                    /**
+                     * @return string
+                     * @psalm-taint-sink sql $sql
+                     * @psalm-taint-specialize
+                     */
+                    function query(string $sql) {}
+                    $value = $_GET["value"];
+                    $result = fetch($value);'
+            ],
+            'NoTaintForIntTypeCastUsingAnnotatedSink' => [
+                '<?php // --taint-analysis
+                    function fetch($id): string
+                    {
+                        return query("SELECT * FROM table WHERE id=" . (int)$id);
+                    }
+                    /**
+                     * @return string
+                     * @psalm-taint-sink sql $sql
+                     * @psalm-taint-specialize
+                     */
+                    function query(string $sql) {}
+                    $value = $_GET["value"];
+                    $result = fetch($value);'
             ],
         ];
     }
@@ -2153,6 +2214,16 @@ class TaintTest extends TestCase
                     takesArray([$_GET["bad"] => "good"]);',
                 'error_message' => 'TaintedHtml',
             ],
+            'resultOfPlusIsTaintedOnArrays' => [
+                '<?php
+                    scope($_GET["foo"]);
+                    function scope(array $foo)
+                    {
+                        $var = $foo + [];
+                        var_dump($var);
+                    }',
+                'error_message' => 'TaintedHtml',
+            ],
             'taintArrayKeyWithExplicitSink' => [
                 '<?php
                     /** @psalm-taint-sink html $values */
@@ -2172,6 +2243,14 @@ class TaintTest extends TestCase
                     foo([$_GET["a"]]);',
                 'error_message' => 'TaintedHtml',
             ],
+            'shellExecBacktick' => [
+                '<?php
+
+                    $input = $_GET["input"];
+                    $x = `$input`;
+                    ',
+                'error_message' => 'TaintedShell',
+            ],
             /*
             // TODO: Stubs do not support this type of inference even with $this->message = $message.
             // Most uses of getMessage() would be with caught exceptions, so this is not representative of real code.
@@ -2182,6 +2261,29 @@ class TaintTest extends TestCase
                 'error_message' => 'TaintedHtml',
             ],
             */
+            'castToArrayPassTaints' => [
+                '<?php
+                    $args = $_POST;
+
+                    $args = (array) $args;
+
+                    pg_query($connection, "SELECT * FROM tableA where key = " .$args["key"]);
+                    ',
+                'error_message' => 'TaintedSql',
+            ],
+            'taintSinkWithComments' => [
+                '<?php
+
+                    /**
+                     * @psalm-taint-sink html $sink
+                     *
+                     * Not working
+                     */
+                    function sinkNotWorking($sink) : string {}
+
+                    echo sinkNotWorking($_GET["taint"]);',
+                'error_message' => 'TaintedHtml',
+            ],
         ];
     }
 
@@ -2193,7 +2295,7 @@ class TaintTest extends TestCase
      */
     public function multipleTaintIssuesAreDetected(string $code, array $expectedIssuesTypes): void
     {
-        if (\strpos($this->getTestName(), 'SKIPPED-') !== false) {
+        if (strpos($this->getTestName(), 'SKIPPED-') !== false) {
             $this->markTestSkipped();
         }
 
@@ -2205,7 +2307,7 @@ class TaintTest extends TestCase
 
         $this->analyzeFile($filePath, new Context(), false);
 
-        $actualIssueTypes = \array_map(
+        $actualIssueTypes = array_map(
             function (IssueData $issue): string {
                 return $issue->type . '{ ' . trim($issue->snippet) . ' }';
             },

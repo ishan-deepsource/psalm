@@ -5,6 +5,11 @@ use Psalm\SourceControl\Git\CommitInfo;
 use Psalm\SourceControl\Git\GitInfo;
 
 use function explode;
+use function file_get_contents;
+use function json_decode;
+use function str_replace;
+use function strpos;
+use function strtotime;
 
 /**
  * Environment variables collector for CI environment.
@@ -39,7 +44,7 @@ class BuildInfoCollector
     /**
      * Collect environment variables.
      */
-    public function collect() : array
+    public function collect(): array
     {
         $this->readEnv = [];
 
@@ -65,7 +70,7 @@ class BuildInfoCollector
      *
      * @psalm-suppress PossiblyUndefinedStringArrayOffset
      */
-    protected function fillTravisCi() : self
+    protected function fillTravisCi(): self
     {
         if (isset($this->env['TRAVIS']) && $this->env['TRAVIS'] && isset($this->env['TRAVIS_JOB_ID'])) {
             $this->readEnv['CI_JOB_ID'] = $this->env['TRAVIS_JOB_ID'];
@@ -108,7 +113,7 @@ class BuildInfoCollector
      *
      * @return $this
      */
-    protected function fillCircleCi() : self
+    protected function fillCircleCi(): self
     {
         if (isset($this->env['CIRCLECI']) && $this->env['CIRCLECI'] && isset($this->env['CIRCLE_BUILD_NUM'])) {
             $this->env['CI_BUILD_NUMBER'] = $this->env['CIRCLE_BUILD_NUM'];
@@ -142,7 +147,7 @@ class BuildInfoCollector
      *
      * @return $this
      */
-    protected function fillAppVeyor() : self
+    protected function fillAppVeyor(): self
     {
         if (isset($this->env['APPVEYOR']) && $this->env['APPVEYOR'] && isset($this->env['APPVEYOR_BUILD_NUMBER'])) {
             $this->readEnv['CI_BUILD_NUMBER'] = $this->env['APPVEYOR_BUILD_NUMBER'];
@@ -190,7 +195,7 @@ class BuildInfoCollector
      *
      * @return $this
      */
-    protected function fillJenkins() : self
+    protected function fillJenkins(): self
     {
         if (isset($this->env['JENKINS_URL']) && isset($this->env['BUILD_NUMBER'])) {
             $this->readEnv['CI_BUILD_NUMBER'] = $this->env['BUILD_NUMBER'];
@@ -215,7 +220,7 @@ class BuildInfoCollector
      *
      * @return $this
      */
-    protected function fillScrutinizer() : self
+    protected function fillScrutinizer(): self
     {
         if (isset($this->env['SCRUTINIZER']) && $this->env['SCRUTINIZER']) {
             $this->readEnv['CI_JOB_ID'] = $this->env['SCRUTINIZER_INSPECTION_UUID'];
@@ -256,10 +261,10 @@ class BuildInfoCollector
             $this->env['CI_JOB_ID'] = $this->env['GITHUB_ACTIONS'];
 
             $githubRef = (string) $this->env['GITHUB_REF'];
-            if (\strpos($githubRef, 'refs/heads/') !== false) {
-                $githubRef = \str_replace('refs/heads/', '', $githubRef);
-            } elseif (\strpos($githubRef, 'refs/tags/') !== false) {
-                $githubRef = \str_replace('refs/tags/', '', $githubRef);
+            if (strpos($githubRef, 'refs/heads/') !== false) {
+                $githubRef = str_replace('refs/heads/', '', $githubRef);
+            } elseif (strpos($githubRef, 'refs/tags/') !== false) {
+                $githubRef = str_replace('refs/tags/', '', $githubRef);
             }
 
             $this->env['CI_BRANCH'] = $githubRef;
@@ -275,9 +280,9 @@ class BuildInfoCollector
             $this->readEnv['CI_REPO_NAME'] = $slug_parts[1];
 
             if (isset($this->env['GITHUB_EVENT_PATH'])) {
-                $event_json = \file_get_contents((string) $this->env['GITHUB_EVENT_PATH']);
+                $event_json = file_get_contents((string) $this->env['GITHUB_EVENT_PATH']);
                 /** @var array */
-                $event_data = \json_decode($event_json, true);
+                $event_data = json_decode($event_json, true);
 
                 if (isset($event_data['head_commit'])) {
                     /**
@@ -299,7 +304,7 @@ class BuildInfoCollector
                             ->setCommitterName($head_commit_data['committer']['name'])
                             ->setCommitterEmail($head_commit_data['committer']['email'])
                             ->setMessage($head_commit_data['message'])
-                            ->setDate(\strtotime($head_commit_data['timestamp'])),
+                            ->setDate(strtotime($head_commit_data['timestamp'])),
                         []
                     );
 

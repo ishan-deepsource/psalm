@@ -30,7 +30,7 @@ class StubsGenerator
         \Psalm\Codebase $codebase,
         \Psalm\Internal\Provider\ClassLikeStorageProvider $class_provider,
         \Psalm\Internal\Provider\FileStorageProvider $file_provider
-    ) : string {
+    ): string {
         $namespaced_nodes = [];
 
         $psalm_base = dirname(__DIR__, 5);
@@ -384,6 +384,10 @@ class StubsGenerator
                 }
 
                 return new VirtualArray($new_items);
+            }
+
+            if ($atomic_type instanceof Type\Atomic\TEnumCase) {
+                return new VirtualClassConstFetch(new VirtualName('\\' . $atomic_type->value), new VirtualIdentifier($atomic_type->case_name));
             }
         }
 

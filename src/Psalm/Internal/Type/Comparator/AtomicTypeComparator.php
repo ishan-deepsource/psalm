@@ -3,6 +3,7 @@
 namespace Psalm\Internal\Type\Comparator;
 
 use Psalm\Codebase;
+use Psalm\Internal\MethodIdentifier;
 use Psalm\Type;
 use Psalm\Type\Atomic\Scalar;
 use Psalm\Type\Atomic\TArray;
@@ -49,7 +50,7 @@ class AtomicTypeComparator
         bool $allow_interface_equality = false,
         bool $allow_float_int_equality = true,
         ?TypeComparisonResult $atomic_comparison_result = null
-    ) : bool {
+    ): bool {
 
         if (($container_type_part instanceof TTemplateParam
                 || ($container_type_part instanceof TNamedObject
@@ -536,7 +537,7 @@ class AtomicTypeComparator
                     }
 
                     if ($codebase->methods->methodExists(
-                        new \Psalm\Internal\MethodIdentifier(
+                        new MethodIdentifier(
                             $input_type_part->value,
                             '__tostring'
                         )
@@ -667,7 +668,7 @@ class AtomicTypeComparator
         Type\Atomic $type1_part,
         Type\Atomic $type2_part,
         bool $allow_interface_equality = true
-    ) : bool {
+    ): bool {
         if ((get_class($type1_part) === TList::class
                 && $type2_part instanceof Type\Atomic\TNonEmptyList)
             || (get_class($type2_part) === TList::class
@@ -700,7 +701,7 @@ class AtomicTypeComparator
         $first_comparison_result = new TypeComparisonResult();
         $second_comparison_result = new TypeComparisonResult();
 
-        return (AtomicTypeComparator::isContainedBy(
+        return (self::isContainedBy(
             $codebase,
             $type1_part,
             $type2_part,
@@ -709,7 +710,7 @@ class AtomicTypeComparator
             $first_comparison_result
         )
             && !$first_comparison_result->to_string_cast
-        ) || (AtomicTypeComparator::isContainedBy(
+        ) || (self::isContainedBy(
             $codebase,
             $type2_part,
             $type1_part,

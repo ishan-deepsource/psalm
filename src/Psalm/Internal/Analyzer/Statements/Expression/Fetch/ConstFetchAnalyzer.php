@@ -11,9 +11,11 @@ use Psalm\Internal\Analyzer\NamespaceAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\SimpleTypeInferer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Provider\NodeDataProvider;
 use Psalm\Issue\UndefinedConstant;
 use Psalm\IssueBuffer;
 use Psalm\Type;
+use ReflectionProperty;
 
 use function array_key_exists;
 use function array_pop;
@@ -85,15 +87,13 @@ class ConstFetchAnalyzer
                 if ($const_type) {
                     $statements_analyzer->node_data->setType($stmt, clone $const_type);
                 } elseif ($context->check_consts) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new UndefinedConstant(
                             'Const ' . $const_name . ' is not defined',
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
         }
     }
@@ -164,13 +164,15 @@ class ConstFetchAnalyzer
                 case 'PHP_RELEASE_VERSION':
                 case 'PHP_DEBUG':
                 case 'PHP_FLOAT_DIG':
-                case 'PHP_INT_MAX':
                 case 'PHP_INT_MIN':
+                case 'PHP_ZTS':
+                    return Type::getInt();
+
+                case 'PHP_INT_MAX':
                 case 'PHP_INT_SIZE':
                 case 'PHP_MAXPATHLEN':
                 case 'PHP_VERSION_ID':
-                case 'PHP_ZTS':
-                    return Type::getInt();
+                    return Type::getPositiveInt();
 
                 case 'PHP_FLOAT_EPSILON':
                 case 'PHP_FLOAT_MAX':
@@ -210,7 +212,7 @@ class ConstFetchAnalyzer
             $namespace_name = implode('\\', $const_name_parts);
             $namespace_constants = NamespaceAnalyzer::getConstantsForNamespace(
                 $namespace_name,
-                \ReflectionProperty::IS_PUBLIC
+                ReflectionProperty::IS_PUBLIC
             );
 
             if (isset($namespace_constants[$const_name])) {
@@ -241,8 +243,8 @@ class ConstFetchAnalyzer
             return $file_storage_provider->get($constant_file_path)->constants[$fq_const_name];
         }
 
-        return ConstFetchAnalyzer::getGlobalConstType($codebase, $fq_const_name, $const_name)
-            ?? ConstFetchAnalyzer::getGlobalConstType($codebase, $const_name, $const_name);
+        return self::getGlobalConstType($codebase, $fq_const_name, $const_name)
+            ?? self::getGlobalConstType($codebase, $const_name, $const_name);
     }
 
     public static function setConstType(
@@ -263,10 +265,10 @@ class ConstFetchAnalyzer
 
     public static function getConstName(
         PhpParser\Node\Expr $first_arg_value,
-        \Psalm\Internal\Provider\NodeDataProvider $type_provider,
+        NodeDataProvider $type_provider,
         Codebase $codebase,
         Aliases $aliases
-    ) : ?string {
+    ): ?string {
         $const_name = null;
 
         if ($first_arg_value instanceof PhpParser\Node\Scalar\String_) {

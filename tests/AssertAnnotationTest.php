@@ -2,12 +2,15 @@
 
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 use const DIRECTORY_SEPARATOR;
 
 class AssertAnnotationTest extends TestCase
 {
-    use Traits\ValidCodeAnalysisTestTrait;
-    use Traits\InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -1241,7 +1244,7 @@ class AssertAnnotationTest extends TestCase
                         return substr($a, 0, 1) . substr($b, 0, 1);
                     }'
             ],
-            'SKIPPED-convertConstStringType' => [
+            'convertConstStringType' => [
                 '<?php
                     class A {
                         const T1 = 1;

@@ -4,10 +4,13 @@ namespace Psalm\Tests\TypeReconciliation;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\FileAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Provider\NodeDataProvider;
+use Psalm\Internal\Type\AssertionReconciler;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
+use Psalm\Tests\TestCase;
 use Psalm\Type;
 
-class ReconcilerTest extends \Psalm\Tests\TestCase
+class ReconcilerTest extends TestCase
 {
     /** @var FileAnalyzer */
     protected $file_analyzer;
@@ -15,7 +18,7 @@ class ReconcilerTest extends \Psalm\Tests\TestCase
     /** @var StatementsAnalyzer */
     protected $statements_analyzer;
 
-    public function setUp() : void
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -23,7 +26,7 @@ class ReconcilerTest extends \Psalm\Tests\TestCase
         $this->file_analyzer->context = new Context();
         $this->statements_analyzer = new StatementsAnalyzer(
             $this->file_analyzer,
-            new \Psalm\Internal\Provider\NodeDataProvider()
+            new NodeDataProvider()
         );
 
         $this->addFile('newfile.php', '
@@ -39,11 +42,10 @@ class ReconcilerTest extends \Psalm\Tests\TestCase
 
     /**
      * @dataProvider providerTestReconcilation
-     *
      */
     public function testReconcilation(string $expected_type, string $assertion, string $original_type): void
     {
-        $reconciled = \Psalm\Internal\Type\AssertionReconciler::reconcile(
+        $reconciled = AssertionReconciler::reconcile(
             $assertion,
             Type::parseString($original_type),
             null,
@@ -146,6 +148,8 @@ class ReconcilerTest extends \Psalm\Tests\TestCase
             'filterKeyedArrayWithIterable' => ['array{some: string}', 'iterable<string>', 'array{some: mixed}'],
             'SimpleXMLElementNotAlwaysTruthy' => ['SimpleXMLElement', '!falsy', 'SimpleXMLElement'],
             'SimpleXMLElementNotAlwaysTruthy2' => ['SimpleXMLElement', 'falsy', 'SimpleXMLElement'],
+            'SimpleXMLIteratorNotAlwaysTruthy' => ['SimpleXMLIterator', '!falsy', 'SimpleXMLIterator'],
+            'SimpleXMLIteratorNotAlwaysTruthy2' => ['SimpleXMLIterator', 'falsy', 'SimpleXMLIterator'],
         ];
     }
 
@@ -179,6 +183,72 @@ class ReconcilerTest extends \Psalm\Tests\TestCase
             'literalNumericString' => [
                 '"10.03"',
                 'numeric',
+            ],
+        ];
+    }
+
+    /**
+     * @dataProvider constantAssertions
+     */
+    public function testReconciliationOfClassConstantInAssertions(string $assertion, string $expected_type): void
+    {
+        $this->addFile(
+            'psalm-assert.php',
+            '
+            <?php
+            namespace ReconciliationTest;
+            class Foo
+            {
+                const PREFIX_BAR = \'bar\';
+                const PREFIX_BAZ = \'baz\';
+                const PREFIX_QOO = Foo::PREFIX_BAR;
+            }
+            '
+        );
+        $this->project_analyzer->getCodebase()->scanFiles();
+
+        $reconciled = AssertionReconciler::reconcile(
+            $assertion,
+            new Type\Union([
+                new Type\Atomic\TLiteralString(''),
+            ]),
+            null,
+            $this->statements_analyzer,
+            false,
+            []
+        );
+
+        $this->assertSame(
+            $expected_type,
+            $reconciled->getId()
+        );
+    }
+
+    /**
+     * @return array<non-empty-string,array{non-empty-string,string}>
+     */
+    public function constantAssertions(): array
+    {
+        return [
+            'constant-with-prefix' => [
+                'class-constant(ReconciliationTest\\Foo::PREFIX_*)',
+                '"bar"|"baz"',
+            ],
+            'single-class-constant' => [
+                'class-constant(ReconciliationTest\\Foo::PREFIX_BAR)',
+                '"bar"',
+            ],
+            'referencing-another-class-constant' => [
+                'class-constant(ReconciliationTest\\Foo::PREFIX_QOO)',
+                '"bar"',
+            ],
+            'referencing-all-class-constants' => [
+                'class-constant(ReconciliationTest\\Foo::*)',
+                '"bar"|"baz"',
+            ],
+            'referencing-some-class-constants-with-wildcard' => [
+                'class-constant(ReconciliationTest\\Foo::PREFIX_B*)',
+                '"bar"|"baz"',
             ],
         ];
     }

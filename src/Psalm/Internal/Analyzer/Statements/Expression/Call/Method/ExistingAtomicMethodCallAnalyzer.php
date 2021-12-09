@@ -5,6 +5,7 @@ use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Context;
+use Psalm\FileManipulation;
 use Psalm\Internal\Analyzer\FunctionLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\ArgumentMapPopulator;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\ClassTemplateParamCollector;
@@ -12,10 +13,14 @@ use Psalm\Internal\Analyzer\Statements\Expression\Call\FunctionCallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\CallAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\ExpressionIdentifier;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
 use Psalm\Internal\FileManipulation\FileManipulationBuffer;
 use Psalm\Internal\MethodIdentifier;
+use Psalm\Internal\Type\Comparator\TypeComparisonResult;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
+use Psalm\Internal\Type\TemplateResult;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\InvalidPropertyAssignmentValue;
 use Psalm\Issue\MixedPropertyTypeCoercion;
 use Psalm\Issue\PossiblyInvalidPropertyAssignmentValue;
@@ -27,6 +32,7 @@ use Psalm\Node\Expr\VirtualFuncCall;
 use Psalm\Plugin\EventHandler\Event\AfterMethodCallAnalysisEvent;
 use Psalm\Storage\Assertion;
 use Psalm\Type;
+use UnexpectedValueException;
 
 use function array_map;
 use function count;
@@ -52,7 +58,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
         ?string $lhs_var_id,
         MethodIdentifier $method_id,
         AtomicMethodCallAnalysisResult $result
-    ) : Type\Union {
+    ): Type\Union {
         $config = $codebase->config;
 
         $fq_class_name = $lhs_type_part->value;
@@ -151,10 +157,10 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
             $lhs_var_id === '$this'
         );
 
-        if ($lhs_var_id === '$this' && $parent_source instanceof \Psalm\Internal\Analyzer\FunctionLikeAnalyzer) {
+        if ($lhs_var_id === '$this' && $parent_source instanceof FunctionLikeAnalyzer) {
             $grandparent_source = $parent_source->getSource();
 
-            if ($grandparent_source instanceof \Psalm\Internal\Analyzer\TraitAnalyzer) {
+            if ($grandparent_source instanceof TraitAnalyzer) {
                 $fq_trait_name = $grandparent_source->getFQCLN();
 
                 $fq_trait_name_lc = strtolower($fq_trait_name);
@@ -176,7 +182,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
             }
         }
 
-        $template_result = new \Psalm\Internal\Type\TemplateResult([], $class_template_params ?: []);
+        $template_result = new TemplateResult([], $class_template_params ?: []);
 
         if ($codebase->store_node_types
             && !$context->collect_initializations
@@ -248,11 +254,53 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
 
         try {
             $method_storage = $codebase->methods->getStorage($declaring_method_id ?? $method_id);
-        } catch (\UnexpectedValueException $e) {
+        } catch (UnexpectedValueException $e) {
             $method_storage = null;
         }
 
         if ($method_storage) {
+            if ($method_storage->self_out_type && $lhs_var_id) {
+                $self_out_candidate = clone $method_storage->self_out_type;
+
+                if ($template_result->lower_bounds) {
+                    $self_out_candidate = TypeExpander::expandUnion(
+                        $codebase,
+                        $self_out_candidate,
+                        $fq_class_name,
+                        null,
+                        $class_storage->parent_class,
+                        true,
+                        false,
+                        $static_type instanceof Type\Atomic\TNamedObject
+                            && $codebase->classlike_storage_provider->get($static_type->value)->final,
+                        true
+                    );
+                }
+
+                $self_out_candidate = MethodCallReturnTypeFetcher::replaceTemplateTypes(
+                    $self_out_candidate,
+                    $template_result,
+                    $method_id,
+                    count($args),
+                    $codebase
+                );
+
+                $self_out_candidate = TypeExpander::expandUnion(
+                    $codebase,
+                    $self_out_candidate,
+                    $fq_class_name,
+                    $static_type,
+                    $class_storage->parent_class,
+                    true,
+                    false,
+                    $static_type instanceof Type\Atomic\TNamedObject
+                        && $codebase->classlike_storage_provider->get($static_type->value)->final,
+                    true
+                );
+
+                $context->vars_in_scope[$lhs_var_id] = $self_out_candidate;
+            }
+
             if (!$context->collect_mutations && !$context->collect_initializations) {
                 MethodCallPurityAnalyzer::analyze(
                     $statements_analyzer,
@@ -322,7 +370,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                             $class_template_params,
                             $lhs_var_id,
                             $codebase
-                        ) : Assertion {
+                        ): Assertion {
                             return $assertion->getUntemplatedCopy(
                                 $class_template_params ?: [],
                                 $lhs_var_id,
@@ -342,7 +390,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                             $class_template_params,
                             $lhs_var_id,
                             $codebase
-                        ) : Assertion {
+                        ): Assertion {
                             return $assertion->getUntemplatedCopy(
                                 $class_template_params ?: [],
                                 $lhs_var_id,
@@ -361,14 +409,14 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
             foreach ($codebase->methods_to_rename as $original_method_id => $new_method_name) {
                 if ($declaring_method_id && (strtolower((string) $declaring_method_id)) === $original_method_id) {
                     $file_manipulations = [
-                        new \Psalm\FileManipulation(
+                        new FileManipulation(
                             (int) $stmt_name->getAttribute('startFilePos'),
                             (int) $stmt_name->getAttribute('endFilePos') + 1,
                             $new_method_name
                         )
                     ];
 
-                    \Psalm\Internal\FileManipulation\FileManipulationBuffer::add(
+                    FileManipulationBuffer::add(
                         $statements_analyzer->getFilePath(),
                         $file_manipulations
                     );
@@ -420,7 +468,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
         PhpParser\Node\Identifier $stmt_name,
         Context $context,
         string $fq_class_name
-    ) : ?Type\Union {
+    ): ?Type\Union {
         $method_name = strtolower($stmt_name->name);
         if (!in_array($method_name, ['__get', '__set'], true)) {
             return null;
@@ -472,7 +520,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                     : null;
 
                 if (isset($class_storage->pseudo_property_set_types['$' . $prop_name]) && $second_arg_type) {
-                    $pseudo_set_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                    $pseudo_set_type = TypeExpander::expandUnion(
                         $codebase,
                         $class_storage->pseudo_property_set_types['$' . $prop_name],
                         $fq_class_name,
@@ -480,7 +528,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                         $class_storage->parent_class
                     );
 
-                    $union_comparison_results = new \Psalm\Internal\Type\Comparator\TypeComparisonResult();
+                    $union_comparison_results = new TypeComparisonResult();
 
                     $type_match_found = UnionTypeComparator::isContainedBy(
                         $codebase,
@@ -493,7 +541,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
 
                     if ($union_comparison_results->type_coerced) {
                         if ($union_comparison_results->type_coerced_from_mixed) {
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new MixedPropertyTypeCoercion(
                                     $prop_name . ' expects \'' . $pseudo_set_type->getId() . '\', '
                                         . ' parent type `' . $second_arg_type . '` provided',
@@ -501,11 +549,9 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                                     $property_id
                                 ),
                                 $statements_analyzer->getSuppressedIssues()
-                            )) {
-                                // keep soldiering on
-                            }
+                            );
                         } else {
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new PropertyTypeCoercion(
                                     $prop_name . ' expects \'' . $pseudo_set_type->getId() . '\', '
                                         . ' parent type `' . $second_arg_type . '` provided',
@@ -513,9 +559,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                                     $property_id
                                 ),
                                 $statements_analyzer->getSuppressedIssues()
-                            )) {
-                                // keep soldiering on
-                            }
+                            );
                         }
                     }
 
@@ -525,7 +569,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                             $second_arg_type,
                             $pseudo_set_type
                         )) {
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new PossiblyInvalidPropertyAssignmentValue(
                                     $prop_name . ' with declared type \''
                                     . $pseudo_set_type
@@ -534,11 +578,9 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                                     $property_id
                                 ),
                                 $statements_analyzer->getSuppressedIssues()
-                            )) {
-                                // fall through
-                            }
+                            );
                         } else {
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new InvalidPropertyAssignmentValue(
                                     $prop_name . ' with declared type \''
                                     . $pseudo_set_type
@@ -547,9 +589,7 @@ class ExistingAtomicMethodCallAnalyzer extends CallAnalyzer
                                     $property_id
                                 ),
                                 $statements_analyzer->getSuppressedIssues()
-                            )) {
-                                // fall through
-                            }
+                            );
                         }
                     }
                 }

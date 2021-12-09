@@ -8,6 +8,7 @@ use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TemplateStandinTypeReplacer;
 use Psalm\Storage\FunctionLikeParameter;
 use Psalm\Type\Atomic;
+use Psalm\Type\TypeNode;
 use Psalm\Type\Union;
 
 use function array_map;
@@ -190,7 +191,7 @@ trait CallableTrait
         bool $replace = true,
         bool $add_lower_bound = false,
         int $depth = 0
-    ) : Atomic {
+    ): Atomic {
         $callable = clone $this;
 
         if ($callable->params) {
@@ -247,7 +248,7 @@ trait CallableTrait
     public function replaceTemplateTypesWithArgTypes(
         TemplateResult $template_result,
         ?Codebase $codebase
-    ) : void {
+    ): void {
         if ($this->params) {
             foreach ($this->params as $param) {
                 if (!$param->type) {
@@ -272,9 +273,9 @@ trait CallableTrait
     }
 
     /**
-     * @return list<\Psalm\Type\TypeNode>
+     * @return list<TypeNode>
      */
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         $child_nodes = [];
 

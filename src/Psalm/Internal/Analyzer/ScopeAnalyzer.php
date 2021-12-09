@@ -3,6 +3,8 @@
 namespace Psalm\Internal\Analyzer;
 
 use PhpParser;
+use Psalm\Internal\Provider\NodeDataProvider;
+use Psalm\NodeTypeProvider;
 
 use function array_diff;
 use function array_filter;
@@ -75,7 +77,7 @@ class ScopeAnalyzer
      */
     public static function getControlActions(
         array $stmts,
-        ?\Psalm\Internal\Provider\NodeDataProvider $nodes,
+        ?NodeDataProvider $nodes,
         array $exit_functions,
         array $break_types,
         bool $return_is_exit = true
@@ -286,7 +288,7 @@ class ScopeAnalyzer
 
                     $case_does_end = !array_diff(
                         $control_actions,
-                        [ScopeAnalyzer::ACTION_END, ScopeAnalyzer::ACTION_RETURN]
+                        [self::ACTION_END, self::ACTION_RETURN]
                     );
 
                     if ($case_does_end) {
@@ -447,30 +449,16 @@ class ScopeAnalyzer
                     return array_values(array_unique(array_merge($control_actions, $try_statement_actions)));
                 }
 
-                if ($stmt->finally) {
-                    if ($stmt->finally->stmts) {
-                        $finally_statement_actions = self::getControlActions(
-                            $stmt->finally->stmts,
-                            $nodes,
-                            $exit_functions,
-                            $break_types,
-                            $return_is_exit
-                        );
+                if ($stmt->finally && $stmt->finally->stmts) {
+                    $finally_statement_actions = self::getControlActions(
+                        $stmt->finally->stmts,
+                        $nodes,
+                        $exit_functions,
+                        $break_types,
+                        $return_is_exit
+                    );
 
-                        if (!in_array(self::ACTION_NONE, $finally_statement_actions, true)) {
-                            return array_merge(
-                                array_filter(
-                                    $control_actions,
-                                    function ($action) {
-                                        return $action !== self::ACTION_NONE;
-                                    }
-                                ),
-                                $finally_statement_actions
-                            );
-                        }
-                    }
-
-                    if (!$stmt->catches && !in_array(self::ACTION_NONE, $try_statement_actions, true)) {
+                    if (!in_array(self::ACTION_NONE, $finally_statement_actions, true)) {
                         return array_merge(
                             array_filter(
                                 $control_actions,
@@ -478,7 +466,7 @@ class ScopeAnalyzer
                                     return $action !== self::ACTION_NONE;
                                 }
                             ),
-                            $try_statement_actions
+                            $finally_statement_actions
                         );
                     }
                 }
@@ -501,7 +489,7 @@ class ScopeAnalyzer
      * @param   array<PhpParser\Node> $stmts
      *
      */
-    public static function onlyThrowsOrExits(\Psalm\NodeTypeProvider $type_provider, array $stmts): bool
+    public static function onlyThrowsOrExits(NodeTypeProvider $type_provider, array $stmts): bool
     {
         if (empty($stmts)) {
             return false;

@@ -9,15 +9,24 @@ use PhpParser\Node\Stmt\Function_;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Context;
+use Psalm\FileManipulation;
 use Psalm\Internal\Analyzer\FunctionLike\ReturnTypeAnalyzer;
 use Psalm\Internal\Analyzer\FunctionLike\ReturnTypeCollector;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
+use Psalm\Internal\Codebase\TaintFlowGraph;
+use Psalm\Internal\Codebase\VariableUseGraph;
 use Psalm\Internal\DataFlow\DataFlowNode;
+use Psalm\Internal\FileManipulation\FileManipulationBuffer;
 use Psalm\Internal\FileManipulation\FunctionDocblockManipulator;
+use Psalm\Internal\MethodIdentifier;
+use Psalm\Internal\PhpVisitor\NodeCounterVisitor;
+use Psalm\Internal\Provider\NodeDataProvider;
 use Psalm\Internal\Type\Comparator\TypeComparisonResult;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\InvalidDocblockParamName;
 use Psalm\Issue\InvalidParamDefault;
+use Psalm\Issue\InvalidThrow;
 use Psalm\Issue\MethodSignatureMismatch;
 use Psalm\Issue\MismatchingDocblockParamType;
 use Psalm\Issue\MissingClosureParamType;
@@ -29,18 +38,28 @@ use Psalm\Issue\UnusedClosureParam;
 use Psalm\Issue\UnusedParam;
 use Psalm\IssueBuffer;
 use Psalm\Plugin\EventHandler\Event\AfterFunctionLikeAnalysisEvent;
+use Psalm\Storage\ClassLikeStorage;
+use Psalm\Storage\FunctionLikeParameter;
 use Psalm\Storage\FunctionLikeStorage;
 use Psalm\Storage\FunctionStorage;
 use Psalm\Storage\MethodStorage;
 use Psalm\Type;
 use Psalm\Type\Atomic\TNamedObject;
+use UnexpectedValueException;
 
+use function array_combine;
+use function array_diff_key;
 use function array_key_exists;
 use function array_keys;
 use function array_merge;
 use function array_search;
+use function array_values;
+use function count;
 use function end;
+use function is_string;
 use function md5;
+use function microtime;
+use function reset;
 use function strpos;
 use function strtolower;
 use function substr;
@@ -139,7 +158,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
      */
     public function analyze(
         Context $context,
-        \Psalm\Internal\Provider\NodeDataProvider $type_provider,
+        NodeDataProvider $type_provider,
         ?Context $global_context = null,
         bool $add_mutations = false
     ): ?bool {
@@ -212,7 +231,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             $byref_uses = [];
 
             foreach ($this->function->uses as $use) {
-                if (!\is_string($use->var->name)) {
+                if (!is_string($use->var->name)) {
                     continue;
                 }
 
@@ -259,16 +278,14 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                 );
 
                 if ($codebase->classOrInterfaceExists($fq_classlike_name)) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ReservedWord(
                             'Cannot use ' . $param_name . ' as template name since the class already exists',
                             new CodeLocation($this, $this->function),
                             'resource'
                         ),
                         $this->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
         }
@@ -290,14 +307,14 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                 && strtolower((string) $this->getMethodId()) === $original_method_id
             ) {
                 $file_manipulations = [
-                    new \Psalm\FileManipulation(
+                    new FileManipulation(
                         (int) $this->function->name->getAttribute('startFilePos'),
                         (int) $this->function->name->getAttribute('endFilePos') + 1,
                         $new_method_name
                     )
                 ];
 
-                \Psalm\Internal\FileManipulation\FileManipulationBuffer::add(
+                FileManipulationBuffer::add(
                     $this->getFilePath(),
                     $file_manipulations
                 );
@@ -305,7 +322,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         }
 
         if ($storage instanceof MethodStorage
-            && $method_id instanceof \Psalm\Internal\MethodIdentifier
+            && $method_id instanceof MethodIdentifier
             && $overridden_method_ids
         ) {
             $params = $codebase->methods->getMethodParams(
@@ -369,7 +386,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             foreach ($overridden_method_ids as $overridden_method_id) {
                 $overridden_storage = $codebase->methods->getStorage($overridden_method_id);
                 if ($overridden_storage->allow_named_arg_calls) {
-                    IssueBuffer::accepts(new MethodSignatureMismatch(
+                    IssueBuffer::maybeAdd(new MethodSignatureMismatch(
                         'Method ' . (string) $method_id . ' should accept named arguments '
                         . ' as ' . (string) $overridden_method_id . ' does',
                         $storage->location
@@ -417,7 +434,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             ]);
         }
 
-        $time = \microtime(true);
+        $time = microtime(true);
 
         $project_analyzer = $statements_analyzer->getProjectAnalyzer();
 
@@ -459,7 +476,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             );
 
             $inferred_return_type = $inferred_return_types
-                ? \Psalm\Type::combineUnionTypeArray(
+                ? Type::combineUnionTypeArray(
                     $inferred_return_types,
                     $codebase
                 )
@@ -488,12 +505,12 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         ) {
             $traverser = new PhpParser\NodeTraverser;
 
-            $node_counter = new \Psalm\Internal\PhpVisitor\NodeCounterVisitor();
+            $node_counter = new NodeCounterVisitor();
             $traverser->addVisitor($node_counter);
             $traverser->traverse($function_stmts);
 
             if ($node_counter->count > 5) {
-                $time_taken = \microtime(true) - $time;
+                $time_taken = microtime(true) - $time;
                 $codebase->analyzer->addFunctionTiming($cased_method_id, $time_taken / $node_counter->count);
             }
         }
@@ -517,7 +534,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                 if ($this->function instanceof Closure
                     || $this->function instanceof ArrowFunction
                 ) {
-                    IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new MissingClosureParamType(
                             'Parameter $' . $function_param->name . ' has no provided type',
                             $function_param->location
@@ -525,7 +542,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         $storage->suppressed_issues + $this->getSuppressedIssues()
                     );
                 } else {
-                    IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new MissingParamType(
                             'Parameter $' . $function_param->name . ' has no provided type',
                             $function_param->location
@@ -560,14 +577,14 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             );
 
             $closure_return_type = $closure_return_types
-                ? \Psalm\Type::combineUnionTypeArray(
+                ? Type::combineUnionTypeArray(
                     $closure_return_types,
                     $codebase
                 )
                 : Type::getVoid();
 
             $closure_yield_type = $closure_yield_types
-                ? \Psalm\Type::combineUnionTypeArray(
+                ? Type::combineUnionTypeArray(
                     $closure_yield_types,
                     $codebase
                 )
@@ -581,7 +598,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                 /**
                  * @var Type\Atomic\TClosure
                  */
-                $closure_atomic = \array_values($function_type->getAtomicTypes())[0];
+                $closure_atomic = array_values($function_type->getAtomicTypes())[0];
 
                 if (($storage->return_type === $storage->signature_return_type)
                     && (!$storage->return_type
@@ -641,17 +658,15 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                     $container_type = new Type\Union([new TNamedObject('Exception'), new TNamedObject('Throwable')]);
 
                     if (!UnionTypeComparator::isContainedBy($codebase, $input_type, $container_type)) {
-                        if (IssueBuffer::accepts(
-                            new \Psalm\Issue\InvalidThrow(
+                        IssueBuffer::maybeAdd(
+                            new InvalidThrow(
                                 'Class supplied for @throws ' . $expected_exception
                                     . ' does not implement Throwable',
                                 $storage->throw_locations[$expected_exception],
                                 $expected_exception
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
 
                     if ($codebase->alter_code) {
@@ -682,15 +697,13 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             if (!$is_expected) {
                 foreach ($codelocations as $codelocation) {
                     // issues are suppressed in ThrowAnalyzer, CallAnalyzer, etc.
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new MissingThrowsDocblock(
                             $possibly_thrown_exception . ' is thrown but not caught - please either catch'
                                 . ' or add a @throws annotation',
                             $codelocation
                         )
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
         }
@@ -776,7 +789,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         $file_manipulations = $event->getFileReplacements();
 
         if ($file_manipulations) {
-            \Psalm\Internal\FileManipulation\FileManipulationBuffer::add(
+            FileManipulationBuffer::add(
                 $this->getFilePath(),
                 $file_manipulations
             );
@@ -797,9 +810,9 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
     private function checkParamReferences(
         StatementsAnalyzer $statements_analyzer,
         FunctionLikeStorage $storage,
-        ?\Psalm\Storage\ClassLikeStorage $class_storage,
+        ?ClassLikeStorage $class_storage,
         Context $context
-    ) : void {
+    ): void {
         $codebase = $statements_analyzer->getCodebase();
 
         $unused_params = [];
@@ -816,7 +829,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             $position = array_search(substr($var_name, 1), array_keys($storage->param_lookup), true);
 
             if ($position === false) {
-                throw new \UnexpectedValueException('$position should not be false here');
+                throw new UnexpectedValueException('$position should not be false here');
             }
 
             if ($storage->params[$position]->by_ref) {
@@ -842,7 +855,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
 
             $assignment_node = DataFlowNode::getForAssignment($var_name, $original_location);
 
-            if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
+            if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph
                 && $statements_analyzer->data_flow_graph->isVariableUsed($assignment_node)
             ) {
                 continue;
@@ -853,25 +866,21 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                 || $storage->visibility === ClassLikeAnalyzer::VISIBILITY_PRIVATE
             ) {
                 if ($this instanceof ClosureAnalyzer) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new UnusedClosureParam(
                             'Param ' . $var_name . ' is never referenced in this method',
                             $original_location
                         ),
                         $this->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new UnusedParam(
                             'Param ' . $var_name . ' is never referenced in this method',
                             $original_location
                         ),
                         $this->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             } else {
                 $fq_class_name = (string)$context->self;
@@ -938,7 +947,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
     }
 
     /**
-     * @param array<int, \Psalm\Storage\FunctionLikeParameter> $params
+     * @param array<int, FunctionLikeParameter> $params
      */
     private function processParams(
         StatementsAnalyzer $statements_analyzer,
@@ -947,7 +956,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         array $params,
         Context $context,
         bool $has_template_types
-    ) : bool {
+    ): bool {
         $check_stmts = true;
         $codebase = $statements_analyzer->getCodebase();
         $project_analyzer = $statements_analyzer->getProjectAnalyzer();
@@ -972,7 +981,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             }
 
             if ($signature_type) {
-                $signature_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $signature_type = TypeExpander::expandUnion(
                     $codebase,
                     $signature_type,
                     $context->self,
@@ -984,7 +993,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             if ($function_param->type) {
                 $param_type = clone $function_param->type;
 
-                $param_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $param_type = TypeExpander::expandUnion(
                     $codebase,
                     $param_type,
                     $context->self,
@@ -1032,40 +1041,49 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             if ($statements_analyzer->data_flow_graph
                 && $function_param->location
             ) {
-                $param_assignment = DataFlowNode::getForAssignment(
-                    '$' . $function_param->name,
-                    $function_param->location
-                );
-
-                $statements_analyzer->data_flow_graph->addNode($param_assignment);
-
-                if ($cased_method_id) {
-                    $type_source = DataFlowNode::getForMethodArgument(
-                        $cased_method_id,
-                        $cased_method_id,
-                        $offset,
-                        $function_param->location,
-                        null
-                    );
-
-                    $statements_analyzer->data_flow_graph->addPath($type_source, $param_assignment, 'param');
-                }
-
-                if ($function_param->by_ref
-                    && $codebase->find_unused_variables
+                //don't add to taint flow graph if the type can't transmit taints
+                if (!$statements_analyzer->data_flow_graph instanceof TaintFlowGraph
+                    || $function_param->type === null
+                    || !$function_param->type->isSingle()
+                    || (!$function_param->type->isInt()
+                        && !$function_param->type->isFloat()
+                        && !$function_param->type->isBool())
                 ) {
-                    $statements_analyzer->data_flow_graph->addPath(
-                        $param_assignment,
-                        new DataFlowNode('variable-use', 'variable use', null),
-                        'variable-use'
+                    $param_assignment = DataFlowNode::getForAssignment(
+                        '$' . $function_param->name,
+                        $function_param->location
                     );
-                }
 
-                if ($storage->variadic) {
-                    $this->param_nodes += [$param_assignment->id => $param_assignment];
-                }
+                    $statements_analyzer->data_flow_graph->addNode($param_assignment);
 
-                $var_type->parent_nodes += [$param_assignment->id => $param_assignment];
+                    if ($cased_method_id) {
+                        $type_source = DataFlowNode::getForMethodArgument(
+                            $cased_method_id,
+                            $cased_method_id,
+                            $offset,
+                            $function_param->location,
+                            null
+                        );
+
+                        $statements_analyzer->data_flow_graph->addPath($type_source, $param_assignment, 'param');
+                    }
+
+                    if ($function_param->by_ref
+                        && $codebase->find_unused_variables
+                    ) {
+                        $statements_analyzer->data_flow_graph->addPath(
+                            $param_assignment,
+                            new DataFlowNode('variable-use', 'variable use', null),
+                            'variable-use'
+                        );
+                    }
+
+                    if ($storage->variadic) {
+                        $this->param_nodes += [$param_assignment->id => $param_assignment];
+                    }
+
+                    $var_type->parent_nodes += [$param_assignment->id => $param_assignment];
+                }
             }
 
             $context->vars_in_scope['$' . $function_param->name] = $var_type;
@@ -1113,7 +1131,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         continue;
                     }
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new MismatchingDocblockParamType(
                             'Parameter $' . $function_param->name . ' has wrong type \'' . $param_type .
                                 '\', should be \'' . $signature_type . '\'',
@@ -1121,9 +1139,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         ),
                         $storage->suppressed_issues,
                         true
-                    )) {
-                        // do nothing
-                    }
+                    );
 
                     if ($signature_type->check(
                         $this,
@@ -1156,16 +1172,14 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         true
                     )
                 ) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidParamDefault(
                             'Default value type ' . $default_type->getId() . ' for argument ' . ($offset + 1)
                                 . ' of method ' . $cased_method_id
                                 . ' does not match the given type ' . $param_type->getId(),
                             $function_param->type_location
                         )
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
 
@@ -1182,16 +1196,14 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                 }
             } else {
                 if ($param_type->isVoid()) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ReservedWord(
                             'Parameter cannot be void',
                             $function_param->type_location,
                             'void'
                         ),
                         $this->suppressed_issues
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
 
                 if ($param_type->check(
@@ -1243,14 +1255,14 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
     }
 
     /**
-     * @param \Psalm\Storage\FunctionLikeParameter[] $params
+     * @param FunctionLikeParameter[] $params
      */
     private function alterParams(
         Codebase $codebase,
         FunctionLikeStorage $storage,
         array $params,
         Context $context
-    ) : void {
+    ): void {
         foreach ($this->function->params as $param) {
             $param_name_node = null;
 
@@ -1323,7 +1335,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             && $storage->return_type_location
             && $storage->return_type_location !== $storage->signature_return_type_location
         ) {
-            $replace_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+            $replace_type = TypeExpander::expandUnion(
                 $codebase,
                 $storage->return_type,
                 $context->self,
@@ -1347,7 +1359,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                 && $function_param->type_location !== $function_param->signature_type_location
                 && $function_param->type_location->file_path === $this->getFilePath()
             ) {
-                $replace_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $replace_type = TypeExpander::expandUnion(
                     $codebase,
                     $function_param->type,
                     $context->self,
@@ -1494,7 +1506,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         $actual_type->ignore_falsable_issues
                     )
                     ) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new ReferenceConstraintViolation(
                                 'Variable ' . '$' . $param->name . ' is limited to values of type '
                                     . $param_out_type->getId()
@@ -1506,9 +1518,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                                     : $param->location
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 }
             }
@@ -1539,7 +1549,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         }
 
         if (!$this instanceof ClosureAnalyzer) {
-            throw new \UnexpectedValueException('This is weird');
+            throw new UnexpectedValueException('This is weird');
         }
 
         return $this->getClosureId();
@@ -1555,11 +1565,11 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
 
             try {
                 return $codebase_methods->getStorage($method_id);
-            } catch (\UnexpectedValueException $e) {
+            } catch (UnexpectedValueException $e) {
                 $declaring_method_id = $codebase_methods->getDeclaringMethodId($method_id);
 
                 if ($declaring_method_id === null) {
-                    throw new \UnexpectedValueException('Cannot get storage for function that doesn‘t exist');
+                    throw new UnexpectedValueException('Cannot get storage for function that doesn‘t exist');
                 }
 
                 // happens for fake constructors
@@ -1572,14 +1582,14 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         } elseif ($this instanceof ClosureAnalyzer) {
             $function_id = $this->getClosureId();
         } else {
-            throw new \UnexpectedValueException('This is weird');
+            throw new UnexpectedValueException('This is weird');
         }
 
         return $codebase->functions->getStorage($statements_analyzer, $function_id);
     }
 
     /** @return non-empty-string */
-    public function getId() : string
+    public function getId(): string
     {
         if ($this instanceof MethodAnalyzer) {
             return (string) $this->getMethodId();
@@ -1593,7 +1603,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             return $this->getClosureId();
         }
 
-        throw new \UnexpectedValueException('This is weird');
+        throw new UnexpectedValueException('This is weird');
     }
 
     /**
@@ -1644,7 +1654,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         return $this->is_static;
     }
 
-    public function getCodebase() : Codebase
+    public function getCodebase(): Codebase
     {
         return $this->codebase;
     }
@@ -1665,7 +1675,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
     public function addSuppressedIssues(array $new_issues): void
     {
         if (isset($new_issues[0])) {
-            $new_issues = \array_combine($new_issues, $new_issues);
+            $new_issues = array_combine($new_issues, $new_issues);
         }
 
         $this->suppressed_issues = $new_issues + $this->suppressed_issues;
@@ -1677,10 +1687,10 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
     public function removeSuppressedIssues(array $new_issues): void
     {
         if (isset($new_issues[0])) {
-            $new_issues = \array_combine($new_issues, $new_issues);
+            $new_issues = array_combine($new_issues, $new_issues);
         }
 
-        $this->suppressed_issues = \array_diff_key($this->suppressed_issues, $new_issues);
+        $this->suppressed_issues = array_diff_key($this->suppressed_issues, $new_issues);
     }
 
     /**
@@ -1703,7 +1713,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             return $this->local_return_type;
         }
 
-        $this->local_return_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+        $this->local_return_type = TypeExpander::expandUnion(
             $this->codebase,
             $storage_return_type,
             $this->getFQCLN(),
@@ -1719,19 +1729,19 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
 
     /**
      * @return array{
-     *        \Psalm\Internal\MethodIdentifier|null,
-     *        \Psalm\Internal\MethodIdentifier|null,
-     *        \Psalm\Storage\ClassLikeStorage|null,
+     *        MethodIdentifier|null,
+     *        MethodIdentifier|null,
+     *        ClassLikeStorage|null,
      *        ?string,
      *        ?string,
-     *        array<string, \Psalm\Internal\MethodIdentifier>
+     *        array<string, MethodIdentifier>
      * }|null
      */
     private function getFunctionInformation(
         Context $context,
         Codebase $codebase,
-        \Psalm\Internal\Provider\NodeDataProvider $type_provider,
-        \Psalm\Storage\FunctionLikeStorage $storage,
+        NodeDataProvider $type_provider,
+        FunctionLikeStorage $storage,
         bool $add_mutations
     ): ?array {
         $classlike_storage_provider = $codebase->classlike_storage_provider;
@@ -1745,7 +1755,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
 
         if ($this instanceof MethodAnalyzer) {
             if (!$storage instanceof MethodStorage) {
-                throw new \UnexpectedValueException('$storage must be MethodStorage');
+                throw new UnexpectedValueException('$storage must be MethodStorage');
             }
 
             $real_method_id = $this->getMethodId();
@@ -1774,7 +1784,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         $template_params[] = new Type\Union([
                             new Type\Atomic\TTemplateParam(
                                 $param_name,
-                                \reset($template_map),
+                                reset($template_map),
                                 $key
                             )
                         ]);
@@ -1880,7 +1890,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                     if (!isset($appearing_class_storage->class_implements[strtolower($overridden_fq_class_name)])) {
                         MethodComparator::compare(
                             $codebase,
-                            \count($overridden_method_ids) === 1 ? $this->function : null,
+                            count($overridden_method_ids) === 1 ? $this->function : null,
                             $declaring_class_storage,
                             $parent_storage,
                             $storage,
@@ -1906,7 +1916,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
             $context->calling_function_id = strtolower($cased_method_id);
         } elseif ($this instanceof ClosureAnalyzer) {
             if ($storage->return_type) {
-                $closure_return_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $closure_return_type = TypeExpander::expandUnion(
                     $codebase,
                     $storage->return_type,
                     $context->self,
@@ -1935,7 +1945,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                 ])
             );
         } else {
-            throw new \UnexpectedValueException('Impossible');
+            throw new UnexpectedValueException('Impossible');
         }
 
         return [

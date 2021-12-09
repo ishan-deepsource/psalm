@@ -3,13 +3,16 @@ namespace Psalm\Tests;
 
 use Psalm\Config;
 use Psalm\Context;
+use Psalm\Exception\CodeException;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
 
 use const DIRECTORY_SEPARATOR;
 
 class AnnotationTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     public function setUp(): void
     {
@@ -141,7 +144,7 @@ class AnnotationTest extends TestCase
 
     public function testPhpStormGenericsInvalidArgument(): void
     {
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         $this->expectExceptionMessage('InvalidScalarArgument');
 
         Config::getInstance()->allow_phpstorm_generics = true;
@@ -163,7 +166,7 @@ class AnnotationTest extends TestCase
 
     public function testPhpStormGenericsNoTypehint(): void
     {
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         $this->expectExceptionMessage('PossiblyInvalidMethodCall');
 
         Config::getInstance()->allow_phpstorm_generics = true;
@@ -182,7 +185,7 @@ class AnnotationTest extends TestCase
 
     public function testInvalidParamDefault(): void
     {
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         $this->expectExceptionMessage('InvalidParamDefault');
 
         $this->addFile(
@@ -219,7 +222,7 @@ class AnnotationTest extends TestCase
 
     public function testInvalidTypehintParamDefaultButAllowedInConfig(): void
     {
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         $this->expectExceptionMessage('InvalidParamDefault');
 
         Config::getInstance()->add_param_default_to_docblock_type = true;
@@ -336,7 +339,7 @@ class AnnotationTest extends TestCase
                      * @psalm-ignore-nullable-return
                      */
                     function makeA() {
-                        return rand(0, 1) ? new A(): null;
+                        return rand(0, 1) ? new A() : null;
                     }
 
                     function takeA(A $_a): void { }
@@ -839,8 +842,8 @@ class AnnotationTest extends TestCase
                     }',
                 [],
                 [
-                    'InvalidDocblock' => \Psalm\Config::REPORT_INFO,
-                    'MissingReturnType' => \Psalm\Config::REPORT_INFO,
+                    'InvalidDocblock' => Config::REPORT_INFO,
+                    'MissingReturnType' => Config::REPORT_INFO,
                 ],
             ],
             'objectWithPropertiesAnnotation' => [
@@ -1319,6 +1322,19 @@ class AnnotationTest extends TestCase
                     new UserRole(new stdClass(), new stdClass());
                     '
             ],
+            'promotedPropertiesDocumentationForPropertyAndSignature' => [
+                '<?php
+                    final class A
+                    {
+                        public function __construct(
+                            /**
+                             * @var iterable<string>
+                             */
+                            private iterable $strings,
+                        ) {
+                        }
+                    }'
+            ],
         ];
     }
 
@@ -1443,7 +1459,7 @@ class AnnotationTest extends TestCase
                     }',
                 'error_message' => 'MissingReturnType',
                 [
-                    'InvalidDocblock' => \Psalm\Config::REPORT_INFO,
+                    'InvalidDocblock' => Config::REPORT_INFO,
                 ],
             ],
             'invalidDocblockReturn' => [
@@ -1942,8 +1958,24 @@ class AnnotationTest extends TestCase
                     ',
                 'error_message' => 'InvalidDocblock',
             ],
+            'promotedPropertyWithParamDocblockAndSignatureType' => [
+                '<?php
 
+                    class A
+                    {
+                        public function __construct(
+                            /** @var "cti"|"basic"|"teams"|"" */
+                            public string $licenseType = "",
+                        ) {
+                        }
+                    }
 
+                    $a = new A("ladida");
+                    $a->licenseType = "dudidu";
+
+                    echo $a->licenseType;',
+                'error_message' => 'InvalidArgument',
+            ],
         ];
     }
 }

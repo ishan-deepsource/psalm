@@ -1,6 +1,7 @@
 <?php
 namespace Psalm\Internal\Provider;
 
+use Closure;
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Context;
@@ -18,7 +19,7 @@ class MethodReturnTypeProvider
     /**
      * @var array<
      *   lowercase-string,
-     *   array<\Closure(MethodReturnTypeProviderEvent) : ?Type\Union>
+     *   array<Closure(MethodReturnTypeProviderEvent): ?Type\Union>
      * >
      */
     private static $handlers = [];
@@ -26,7 +27,7 @@ class MethodReturnTypeProvider
     /**
      * @var array<
      *   lowercase-string,
-     *   array<\Closure(
+     *   array<Closure(
      *     StatementsSource,
      *     string,
      *     lowercase-string,
@@ -36,7 +37,7 @@ class MethodReturnTypeProvider
      *     ?array<Type\Union>=,
      *     ?string=,
      *     ?lowercase-string=
-     *   ) : ?Type\Union>
+     *   ): ?Type\Union>
      * >
      */
     private static $legacy_handlers = [];
@@ -47,6 +48,7 @@ class MethodReturnTypeProvider
         self::$legacy_handlers = [];
 
         $this->registerClass(ReturnTypeProvider\DomNodeAppendChild::class);
+        $this->registerClass(ReturnTypeProvider\ImagickPixelColorReturnTypeProvider::class);
         $this->registerClass(ReturnTypeProvider\SimpleXmlElementAsXml::class);
         $this->registerClass(ReturnTypeProvider\PdoStatementReturnTypeProvider::class);
         $this->registerClass(ReturnTypeProvider\ClosureFromCallableReturnTypeProvider::class);
@@ -58,13 +60,13 @@ class MethodReturnTypeProvider
     public function registerClass(string $class): void
     {
         if (is_subclass_of($class, LegacyMethodReturnTypeProviderInterface::class, true)) {
-            $callable = \Closure::fromCallable([$class, 'getMethodReturnType']);
+            $callable = Closure::fromCallable([$class, 'getMethodReturnType']);
 
             foreach ($class::getClassLikeNames() as $fq_classlike_name) {
                 $this->registerLegacyClosure($fq_classlike_name, $callable);
             }
         } elseif (is_subclass_of($class, MethodReturnTypeProviderInterface::class, true)) {
-            $callable = \Closure::fromCallable([$class, 'getMethodReturnType']);
+            $callable = Closure::fromCallable([$class, 'getMethodReturnType']);
 
             foreach ($class::getClassLikeNames() as $fq_classlike_name) {
                 $this->registerClosure($fq_classlike_name, $callable);
@@ -73,15 +75,15 @@ class MethodReturnTypeProvider
     }
 
     /**
-     * @param \Closure(MethodReturnTypeProviderEvent) : ?Type\Union $c
+     * @param Closure(MethodReturnTypeProviderEvent): ?Type\Union $c
      */
-    public function registerClosure(string $fq_classlike_name, \Closure $c): void
+    public function registerClosure(string $fq_classlike_name, Closure $c): void
     {
         self::$handlers[strtolower($fq_classlike_name)][] = $c;
     }
 
     /**
-     * @param  \Closure(
+     * @param Closure(
      *     StatementsSource,
      *     string,
      *     lowercase-string,
@@ -91,15 +93,15 @@ class MethodReturnTypeProvider
      *     ?array<Type\Union>=,
      *     ?string=,
      *     ?lowercase-string=
-     *   ) : ?Type\Union $c
+     *   ): ?Type\Union $c
      *
      */
-    public function registerLegacyClosure(string $fq_classlike_name, \Closure $c): void
+    public function registerLegacyClosure(string $fq_classlike_name, Closure $c): void
     {
         self::$legacy_handlers[strtolower($fq_classlike_name)][] = $c;
     }
 
-    public function has(string $fq_classlike_name) : bool
+    public function has(string $fq_classlike_name): bool
     {
         return isset(self::$handlers[strtolower($fq_classlike_name)]) ||
             isset(self::$legacy_handlers[strtolower($fq_classlike_name)]);

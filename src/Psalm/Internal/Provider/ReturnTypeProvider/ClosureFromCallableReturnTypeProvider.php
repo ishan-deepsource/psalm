@@ -1,14 +1,16 @@
 <?php
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Type\Comparator\CallableTypeComparator;
 use Psalm\Internal\Type\TypeCombiner;
 use Psalm\Plugin\EventHandler\Event\MethodReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\MethodReturnTypeProviderInterface;
 use Psalm\Type;
 
-class ClosureFromCallableReturnTypeProvider implements \Psalm\Plugin\EventHandler\MethodReturnTypeProviderInterface
+class ClosureFromCallableReturnTypeProvider implements MethodReturnTypeProviderInterface
 {
-    public static function getClassLikeNames() : array
+    public static function getClassLikeNames(): array
     {
         return ['Closure'];
     }
@@ -18,7 +20,7 @@ class ClosureFromCallableReturnTypeProvider implements \Psalm\Plugin\EventHandle
         $source = $event->getSource();
         $method_name_lowercase = $event->getMethodNameLowercase();
         $call_args = $event->getCallArgs();
-        if (!$source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$source instanceof StatementsAnalyzer) {
             return null;
         }
 

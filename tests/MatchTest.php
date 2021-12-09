@@ -1,10 +1,13 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class MatchTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -93,7 +96,7 @@ class MatchTest extends TestCase
 
                     class B {}
 
-                    $a = rand(0, 10) ? new A(): new B();
+                    $a = rand(0, 10) ? new A() : new B();
 
                     $a = match (get_class($a)) {
                         A::class => $a->barBar(),
@@ -108,7 +111,7 @@ class MatchTest extends TestCase
                     class A {}
                     class B {}
 
-                    $a = rand(0, 10) ? new A(): new B();
+                    $a = rand(0, 10) ? new A() : new B();
 
                     $a = match (get_class($a)) {
                         C::class => 5,

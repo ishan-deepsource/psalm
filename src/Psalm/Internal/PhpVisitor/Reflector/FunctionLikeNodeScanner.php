@@ -1,22 +1,29 @@
 <?php
 namespace Psalm\Internal\PhpVisitor\Reflector;
 
+use LogicException;
 use PhpParser;
 use PhpParser\Node\Identifier;
 use PhpParser\Node\Name;
 use PhpParser\Node\NullableType;
+use PhpParser\Node\Stmt\Class_;
 use PhpParser\Node\UnionType;
 use Psalm\Aliases;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Config;
+use Psalm\Exception\ComplicatedExpressionException;
 use Psalm\Exception\DocblockParseException;
 use Psalm\Exception\IncorrectDocblockException;
+use Psalm\Internal\Algebra;
 use Psalm\Internal\Algebra\FormulaGenerator;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\CommentAnalyzer;
 use Psalm\Internal\Analyzer\NamespaceAnalyzer;
+use Psalm\Internal\Analyzer\ScopeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\SimpleTypeInferer;
+use Psalm\Internal\MethodIdentifier;
+use Psalm\Internal\Provider\NodeDataProvider;
 use Psalm\Internal\Scanner\FileScanner;
 use Psalm\Internal\Type\TypeAlias;
 use Psalm\Issue\DuplicateFunction;
@@ -24,7 +31,9 @@ use Psalm\Issue\DuplicateMethod;
 use Psalm\Issue\DuplicateParam;
 use Psalm\Issue\InvalidDocblock;
 use Psalm\Issue\MissingDocblockType;
+use Psalm\Issue\ParseError;
 use Psalm\IssueBuffer;
+use Psalm\Storage\Assertion;
 use Psalm\Storage\ClassLikeStorage;
 use Psalm\Storage\FileStorage;
 use Psalm\Storage\FunctionLikeParameter;
@@ -33,13 +42,19 @@ use Psalm\Storage\FunctionStorage;
 use Psalm\Storage\MethodStorage;
 use Psalm\Storage\PropertyStorage;
 use Psalm\Type;
+use ReflectionFunction;
 use UnexpectedValueException;
 
+use function array_keys;
 use function array_pop;
+use function array_search;
 use function count;
+use function end;
 use function explode;
 use function implode;
+use function in_array;
 use function is_string;
+use function spl_object_id;
 use function strlen;
 use function strpos;
 use function strtolower;
@@ -205,9 +220,7 @@ class FunctionLikeNodeScanner
             }
 
             if ($param_storage->name === 'haystack'
-                && (strpos($this->file_path, 'CoreGenericFunctions.phpstub')
-                    || strpos($this->file_path, 'CoreGenericClasses.phpstub')
-                    || strpos($this->file_path, 'CoreGenericIterators.phpstub'))
+                && in_array($this->file_path, $this->codebase->config->internal_stubs)
             ) {
                 $param_storage->expect_variable = true;
             }
@@ -279,7 +292,7 @@ class FunctionLikeNodeScanner
 
                 foreach ($stmt->stmts as $function_stmt) {
                     if ($function_stmt instanceof PhpParser\Node\Stmt\If_) {
-                        $final_actions = \Psalm\Internal\Analyzer\ScopeAnalyzer::getControlActions(
+                        $final_actions = ScopeAnalyzer::getControlActions(
                             $function_stmt->stmts,
                             null,
                             $this->config->exit_functions,
@@ -287,12 +300,12 @@ class FunctionLikeNodeScanner
                             false
                         );
 
-                        if ($final_actions !== [\Psalm\Internal\Analyzer\ScopeAnalyzer::ACTION_END]) {
+                        if ($final_actions !== [ScopeAnalyzer::ACTION_END]) {
                             $var_assertions = [];
                             break;
                         }
 
-                        $cond_id = \spl_object_id($function_stmt->cond);
+                        $cond_id = spl_object_id($function_stmt->cond);
 
                         $if_clauses = FormulaGenerator::getFormula(
                             $cond_id,
@@ -304,13 +317,13 @@ class FunctionLikeNodeScanner
                         );
 
                         try {
-                            $negated_formula = \Psalm\Internal\Algebra::negateFormula($if_clauses);
-                        } catch (\Psalm\Exception\ComplicatedExpressionException $e) {
+                            $negated_formula = Algebra::negateFormula($if_clauses);
+                        } catch (ComplicatedExpressionException $e) {
                             $var_assertions = [];
                             break;
                         }
 
-                        $rules = \Psalm\Internal\Algebra::getTruthsFromFormula($negated_formula);
+                        $rules = Algebra::getTruthsFromFormula($negated_formula);
 
                         if (!$rules) {
                             $var_assertions = [];
@@ -327,12 +340,12 @@ class FunctionLikeNodeScanner
                             if (isset($existing_params[$var_id])) {
                                 $param_offset = $existing_params[$var_id];
 
-                                $var_assertions[] = new \Psalm\Storage\Assertion(
+                                $var_assertions[] = new Assertion(
                                     $param_offset,
                                     $rule
                                 );
                             } elseif (strpos($var_id, '$this->') === 0) {
-                                $var_assertions[] = new \Psalm\Storage\Assertion(
+                                $var_assertions[] = new Assertion(
                                     $var_id,
                                     $rule
                                 );
@@ -351,7 +364,7 @@ class FunctionLikeNodeScanner
                 && $stmt->stmts
                 && $storage instanceof MethodStorage
             ) {
-                $last_stmt = \end($stmt->stmts);
+                $last_stmt = end($stmt->stmts);
 
                 if ($last_stmt instanceof PhpParser\Node\Stmt\Return_
                     && $last_stmt->expr instanceof PhpParser\Node\Expr\Variable
@@ -576,7 +589,7 @@ class FunctionLikeNodeScanner
 
                 if (isset($classlike_storage->properties[$param_storage->name]) && $param_storage->location) {
                     IssueBuffer::add(
-                        new \Psalm\Issue\ParseError(
+                        new ParseError(
                             'Promoted property ' . $param_storage->name . ' clashes with an existing property',
                             $param_storage->location
                         )
@@ -606,7 +619,7 @@ class FunctionLikeNodeScanner
                 }
 
                 //both way to document type were used
-                if ($param_storage->type && $var_comment_type) {
+                if ($param_storage->type && $param_storage->type->from_docblock && $var_comment_type) {
                     if (IssueBuffer::accepts(
                         new InvalidDocblock(
                             'Param ' . $param_storage->name . ' of ' . $cased_function_id .
@@ -619,36 +632,37 @@ class FunctionLikeNodeScanner
                 }
 
                 //no docblock type was provided for param but we have one for property
-                if ($param_storage->type === null && $var_comment_type) {
+                if ($var_comment_type) {
                     $param_storage->type = $var_comment_type;
                 }
 
                 $property_storage = $classlike_storage->properties[$param_storage->name] = new PropertyStorage();
                 $property_storage->is_static = false;
-                $property_storage->type = $param_storage->type ?? $var_comment_type;
+                $property_storage->type = $param_storage->type;
                 $property_storage->signature_type = $param_storage->signature_type;
                 $property_storage->signature_type_location = $param_storage->signature_type_location;
                 $property_storage->type_location = $param_storage->type_location;
                 $property_storage->location = $param_storage->location;
                 $property_storage->stmt_location = new CodeLocation($this->file_scanner, $param);
                 $property_storage->has_default = (bool)$param->default;
+                $property_storage->readonly = (bool)($param->flags & PhpParser\Node\Stmt\Class_::MODIFIER_READONLY);
                 $param_storage->promoted_property = true;
                 $property_storage->is_promoted = true;
 
                 $property_id = $fq_classlike_name . '::$' . $param_storage->name;
 
-                switch ($param->flags) {
-                    case \PhpParser\Node\Stmt\Class_::MODIFIER_PUBLIC:
+                switch ($param->flags & Class_::VISIBILITY_MODIFIER_MASK) {
+                    case Class_::MODIFIER_PUBLIC:
                         $property_storage->visibility = ClassLikeAnalyzer::VISIBILITY_PUBLIC;
                         $classlike_storage->inheritable_property_ids[$param_storage->name] = $property_id;
                         break;
 
-                    case \PhpParser\Node\Stmt\Class_::MODIFIER_PROTECTED:
+                    case Class_::MODIFIER_PROTECTED:
                         $property_storage->visibility = ClassLikeAnalyzer::VISIBILITY_PROTECTED;
                         $classlike_storage->inheritable_property_ids[$param_storage->name] = $property_id;
                         break;
 
-                    case \PhpParser\Node\Stmt\Class_::MODIFIER_PRIVATE:
+                    case Class_::MODIFIER_PRIVATE:
                         $property_storage->visibility = ClassLikeAnalyzer::VISIBILITY_PRIVATE;
                         break;
                 }
@@ -723,7 +737,7 @@ class FunctionLikeNodeScanner
         PhpParser\Node\Stmt\ClassMethod $stmt,
         MethodStorage $storage,
         ClassLikeStorage $classlike_storage
-    ) : void {
+    ): void {
         if (!$stmt->stmts) {
             return;
         }
@@ -750,7 +764,7 @@ class FunctionLikeNodeScanner
                     continue;
                 }
 
-                $param_index = \array_search($param_name, \array_keys($storage->param_lookup), true);
+                $param_index = array_search($param_name, array_keys($storage->param_lookup), true);
 
                 if ($param_index === false || !isset($storage->params[$param_index]->type)) {
                     continue;
@@ -789,7 +803,7 @@ class FunctionLikeNodeScanner
         PhpParser\Node\FunctionLike $stmt,
         bool $fake_method,
         ?string $fq_classlike_name
-    ) : FunctionLikeParameter {
+    ): FunctionLikeParameter {
         $param_type = null;
 
         $is_nullable = $param->default !== null &&
@@ -832,7 +846,7 @@ class FunctionLikeNodeScanner
         if ($param->default) {
             $default_type = SimpleTypeInferer::infer(
                 $this->codebase,
-                new \Psalm\Internal\Provider\NodeDataProvider(),
+                new NodeDataProvider(),
                 $param->default,
                 $this->aliases,
                 null,
@@ -887,7 +901,7 @@ class FunctionLikeNodeScanner
      *     null|lowercase-string,
      *     ClassLikeStorage|null,
      *     bool,
-     *     \Psalm\Internal\MethodIdentifier|null,
+     *     MethodIdentifier|null,
      *     bool
      * }|false
      */
@@ -944,7 +958,7 @@ class FunctionLikeNodeScanner
                         return [$function_id, $storage, null, null, null, null, false, null, true];
                     }
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new DuplicateFunction(
                             'Method ' . $function_id . ' has already been defined'
                             . ($duplicate_function_storage->location
@@ -952,9 +966,7 @@ class FunctionLikeNodeScanner
                                 : ''),
                             new CodeLocation($this->file_scanner, $stmt, null, true)
                         )
-                    )) {
-                        // fall through
-                    }
+                    );
 
                     $this->file_storage->has_visitor_issues = true;
 
@@ -967,23 +979,21 @@ class FunctionLikeNodeScanner
 
                 if (isset($this->config->getPredefinedFunctions()[$function_id])) {
                     /** @psalm-suppress ArgumentTypeCoercion */
-                    $reflection_function = new \ReflectionFunction($function_id);
+                    $reflection_function = new ReflectionFunction($function_id);
 
                     if ($reflection_function->getFileName() !== $this->file_path) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new DuplicateFunction(
                                 'Method ' . $function_id . ' has already been defined as a core function',
                                 new CodeLocation($this->file_scanner, $stmt, null, true)
                             )
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 }
             }
         } elseif ($stmt instanceof PhpParser\Node\Stmt\ClassMethod) {
             if (!$this->classlike_storage) {
-                throw new \LogicException('$this->classlike_storage should not be null');
+                throw new LogicException('$this->classlike_storage should not be null');
             }
 
             $fq_classlike_name = $this->classlike_storage->name;
@@ -1001,7 +1011,7 @@ class FunctionLikeNodeScanner
                 if (!$this->codebase->register_stub_files) {
                     $duplicate_method_storage = $classlike_storage->methods[$method_name_lc];
 
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new DuplicateMethod(
                             'Method ' . $function_id . ' has already been defined'
                             . ($duplicate_method_storage->location
@@ -1009,9 +1019,7 @@ class FunctionLikeNodeScanner
                                 : ''),
                             new CodeLocation($this->file_scanner, $stmt, null, true)
                         )
-                    )) {
-                        // fall through
-                    }
+                    );
 
                     $this->file_storage->has_visitor_issues = true;
 
@@ -1077,7 +1085,7 @@ class FunctionLikeNodeScanner
                 );
             }
 
-            $method_id = new \Psalm\Internal\MethodIdentifier(
+            $method_id = new MethodIdentifier(
                 $fq_classlike_name,
                 $method_name_lc
             );
@@ -1106,7 +1114,7 @@ class FunctionLikeNodeScanner
 
             if ($stmt instanceof PhpParser\Node\Expr\Closure) {
                 foreach ($stmt->uses as $closure_use) {
-                    if ($closure_use->byRef && \is_string($closure_use->var->name)) {
+                    if ($closure_use->byRef && is_string($closure_use->var->name)) {
                         $storage->byref_uses[$closure_use->var->name] = true;
                     }
                 }

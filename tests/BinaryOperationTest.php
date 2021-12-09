@@ -1,24 +1,25 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Config;
+use Psalm\Context;
+use Psalm\Exception\CodeException;
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 use function class_exists;
 
 use const DIRECTORY_SEPARATOR;
 
 class BinaryOperationTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
-    /**
-     * @return void
-     */
-    public function testGMPOperations()
+    public function testGMPOperations(): void
     {
         if (class_exists('GMP') === false) {
             $this->markTestSkipped('Cannot run test, base class "GMP" does not exist!');
-
-            return;
         }
 
         $this->addFile(
@@ -70,7 +71,76 @@ class BinaryOperationTest extends TestCase
             '$t' => 'GMP',
         ];
 
-        $context = new \Psalm\Context();
+        $context = new Context();
+
+        $this->analyzeFile('somefile.php', $context);
+
+        $actual_vars = [];
+        foreach ($assertions as $var => $_) {
+            if (isset($context->vars_in_scope[$var])) {
+                $actual_vars[$var] = (string)$context->vars_in_scope[$var];
+            }
+        }
+
+        $this->assertSame($assertions, $actual_vars);
+    }
+
+    public function testDecimalOperations(): void
+    {
+        if (!class_exists('Decimal\\Decimal')) {
+            $this->markTestSkipped('Cannot run test, base class "Decimal\\Decimal" does not exist!');
+        }
+
+        $this->addFile(
+            'somefile.php',
+            '<?php
+                $a = new \Decimal\Decimal(2);
+                $b = new \Decimal\Decimal(4);
+                $c = $a + $b;
+                $d = $c + 3;
+                echo $d;
+                $f = $a / $b;
+                $g = $a ** $b;
+                $h = $a % $b;
+
+                $i = 6 + $b;
+                $j = 6 - $b;
+                $k = 6 * $b;
+                $l = 6 / $b;
+                $m = 6 ** $b;
+                $n = 6 % $b;
+
+                $o = $a + 6;
+                $p = $a - 6;
+                $q = $a * 6;
+                $r = $a / 6;
+                $s = $a ** 6;
+                $t = $a % 6;'
+        );
+
+        $assertions = [
+            '$a' => 'Decimal\\Decimal',
+            '$b' => 'Decimal\\Decimal',
+            '$c' => 'Decimal\\Decimal',
+            '$d' => 'Decimal\\Decimal',
+            '$f' => 'Decimal\\Decimal',
+            '$g' => 'Decimal\\Decimal',
+            '$h' => 'Decimal\\Decimal',
+            '$i' => 'Decimal\\Decimal',
+            '$j' => 'Decimal\\Decimal',
+            '$k' => 'Decimal\\Decimal',
+            '$l' => 'Decimal\\Decimal',
+            '$m' => 'Decimal\\Decimal',
+            '$n' => 'Decimal\\Decimal',
+            '$o' => 'Decimal\\Decimal',
+            '$p' => 'Decimal\\Decimal',
+            '$q' => 'Decimal\\Decimal',
+            '$r' => 'Decimal\\Decimal',
+            '$s' => 'Decimal\\Decimal',
+            '$t' => 'Decimal\\Decimal',
+        ];
+
+        $context = new Context();
 
         $this->analyzeFile('somefile.php', $context);
 
@@ -86,7 +156,7 @@ class BinaryOperationTest extends TestCase
 
     public function testStrictTrueEquivalence(): void
     {
-        $config = \Psalm\Config::getInstance();
+        $config = Config::getInstance();
         $config->strict_binary_operands = true;
 
         $this->addFile(
@@ -101,15 +171,15 @@ class BinaryOperationTest extends TestCase
                 }'
         );
 
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         $this->expectExceptionMessage('RedundantIdentityWithTrue');
 
-        $this->analyzeFile('somefile.php', new \Psalm\Context());
+        $this->analyzeFile('somefile.php', new Context());
     }
 
     public function testStringFalseInequivalence(): void
     {
-        $config = \Psalm\Config::getInstance();
+        $config = Config::getInstance();
         $config->strict_binary_operands = true;
 
         $this->addFile(
@@ -124,10 +194,10 @@ class BinaryOperationTest extends TestCase
                 }'
         );
 
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         $this->expectExceptionMessage('RedundantIdentityWithTrue');
 
-        $this->analyzeFile('somefile.php', new \Psalm\Context());
+        $this->analyzeFile('somefile.php', new Context());
     }
 
     /**
@@ -701,6 +771,19 @@ class BinaryOperationTest extends TestCase
                     '$a' => 'float|int',
                     '$b' => 'float|int',
                 ],
+            ],
+            'coalesceFilterOutNullEvenWithTernary' => [
+                '<?php
+
+                    interface FooInterface
+                    {
+                        public function toString(): ?string;
+                    }
+
+                    function example(object $foo): string
+                    {
+                        return ($foo instanceof FooInterface ? $foo->toString() : null) ?? "Not a stringable foo";
+                    }',
             ],
         ];
     }

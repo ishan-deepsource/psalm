@@ -1,9 +1,11 @@
 <?php
 namespace Psalm\Internal\Analyzer\Statements\Expression\Call;
 
+use InvalidArgumentException;
 use PhpParser;
 use PhpParser\BuilderFactory;
 use Psalm\CodeLocation;
+use Psalm\Codebase;
 use Psalm\Context;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
@@ -20,11 +22,17 @@ use Psalm\Plugin\EventHandler\Event\AfterFunctionCallAnalysisEvent;
 use Psalm\Storage\FunctionLikeStorage;
 use Psalm\Type;
 use Psalm\Type\Atomic\TCallable;
+use UnexpectedValueException;
 
+use function array_merge;
+use function array_values;
 use function count;
 use function explode;
+use function in_array;
+use function strlen;
 use function strpos;
 use function strtolower;
+use function substr;
 
 /**
  * @internal
@@ -36,7 +44,7 @@ class FunctionCallReturnTypeFetcher
      */
     public static function fetch(
         StatementsAnalyzer $statements_analyzer,
-        \Psalm\Codebase $codebase,
+        Codebase $codebase,
         PhpParser\Node\Expr\FuncCall $stmt,
         PhpParser\Node\Name $function_name,
         string $function_id,
@@ -46,7 +54,7 @@ class FunctionCallReturnTypeFetcher
         ?TCallable $callmap_callable,
         TemplateResult $template_result,
         Context $context
-    ) : Type\Union {
+    ): Type\Union {
         $stmt_type = null;
         $config = $codebase->config;
 
@@ -76,9 +84,21 @@ class FunctionCallReturnTypeFetcher
                             } elseif ($template_name === 'TPhpMajorVersion') {
                                 $template_result->lower_bounds[$template_name] = [
                                     'fn-' . $function_id => [
-                                            new TemplateBound(
-                                                Type::getInt(false, $codebase->php_major_version)
+                                        new TemplateBound(
+                                            Type::getInt(false, $codebase->php_major_version)
+                                        )
+                                    ]
+                                ];
+                            } elseif ($template_name === 'TPhpVersionId') {
+                                $template_result->lower_bounds[$template_name] = [
+                                    'fn-' . $function_id => [
+                                        new TemplateBound(
+                                            Type::getInt(
+                                                false,
+                                                10000 * $codebase->php_major_version
+                                                + 100 * $codebase->php_minor_version
                                             )
+                                        )
                                     ]
                                 ];
                             } else {
@@ -175,13 +195,13 @@ class FunctionCallReturnTypeFetcher
                             );
                         }
                     }
-                } catch (\InvalidArgumentException $e) {
+                } catch (InvalidArgumentException $e) {
                     // this can happen when the function was defined in the Config startup script
                     $stmt_type = Type::getMixed();
                 }
             } else {
                 if (!$callmap_callable) {
-                    throw new \UnexpectedValueException('We should have a callmap callable here');
+                    throw new UnexpectedValueException('We should have a callmap callable here');
                 }
 
                 $stmt_type = self::getReturnTypeFromCallMapWithArgs(
@@ -288,7 +308,7 @@ class FunctionCallReturnTypeFetcher
                         if ($classlike_storage->parent_classes) {
                             return new Type\Union([
                                 new Type\Atomic\TClassString(
-                                    \array_values($classlike_storage->parent_classes)[0]
+                                    array_values($classlike_storage->parent_classes)[0]
                                 )
                             ]);
                         }
@@ -329,10 +349,18 @@ class FunctionCallReturnTypeFetcher
                                     $min = 0;
                                     $max = 0;
                                     foreach ($atomic_types['array']->properties as $property) {
-                                        if (!$property->possibly_undefined) {
+                                        // empty, never and possibly undefined can't count for min value
+                                        if (!$property->possibly_undefined
+                                            && !$property->isEmpty()
+                                            && !$property->isNever()
+                                        ) {
                                             $min++;
                                         }
-                                        $max++;
+
+                                        //empty and never can't count for max value because we know keys are undefined
+                                        if (!$property->isEmpty() && !$property->isNever()) {
+                                            $max++;
+                                        }
                                     }
 
                                     if ($atomic_types['array']->sealed) {
@@ -459,6 +487,16 @@ class FunctionCallReturnTypeFetcher
                     }
 
                     return $call_map_return_type;
+                case 'mb_strtolower':
+                    if (count($call_args) < 2) {
+                        return Type::getLowercaseString();
+                    } else {
+                        $second_arg_type = $statements_analyzer->node_data->getType($call_args[1]->value);
+                        if ($second_arg_type && $second_arg_type->isNull()) {
+                            return Type::getLowercaseString();
+                        }
+                    }
+                    return Type::getString();
             }
         }
 
@@ -501,13 +539,13 @@ class FunctionCallReturnTypeFetcher
         Type\Union $stmt_type,
         TemplateResult $template_result,
         Context $context
-    ) : ?DataFlowNode {
+    ): ?DataFlowNode {
         if (!$statements_analyzer->data_flow_graph) {
             return null;
         }
 
         if ($statements_analyzer->data_flow_graph instanceof TaintFlowGraph
-            && \in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
+            && in_array('TaintedInput', $statements_analyzer->getSuppressedIssues())
         ) {
             return null;
         }
@@ -573,7 +611,7 @@ class FunctionCallReturnTypeFetcher
                 $assignment_node,
                 'conditionally-escaped',
                 $added_taints,
-                \array_merge($removed_taints, $conditionally_removed_taints)
+                array_merge($removed_taints, $conditionally_removed_taints)
             );
 
             $stmt_type->parent_nodes[$assignment_node->id] = $assignment_node;
@@ -597,13 +635,13 @@ class FunctionCallReturnTypeFetcher
                 ) {
                     $first_arg_value = $first_stmt_type->getSingleStringLiteral()->value;
 
-                    $pattern = \substr($first_arg_value, 1, -1);
+                    $pattern = substr($first_arg_value, 1, -1);
 
                     if ($pattern[0] === '['
                         && $pattern[1] === '^'
-                        && \substr($pattern, -1) === ']'
+                        && substr($pattern, -1) === ']'
                     ) {
-                        $pattern = \substr($pattern, 2, -1);
+                        $pattern = substr($pattern, 2, -1);
 
                         if (self::simpleExclusion($pattern, $first_arg_value[0])) {
                             $removed_taints[] = 'html';
@@ -617,7 +655,7 @@ class FunctionCallReturnTypeFetcher
             $event = new AddRemoveTaintsEvent($stmt, $context, $statements_analyzer, $codebase);
 
             $added_taints = $codebase->config->eventDispatcher->dispatchAddTaints($event);
-            $removed_taints = \array_merge(
+            $removed_taints = array_merge(
                 $removed_taints,
                 $codebase->config->eventDispatcher->dispatchRemoveTaints($event)
             );
@@ -665,7 +703,7 @@ class FunctionCallReturnTypeFetcher
         DataFlowNode $function_call_node,
         array $removed_taints,
         array $added_taints = []
-    ) : void {
+    ): void {
         foreach ($function_storage->return_source_params as $i => $path_type) {
             if (!isset($args[$i])) {
                 continue;
@@ -701,7 +739,7 @@ class FunctionCallReturnTypeFetcher
                     $function_param_sink,
                     $function_call_node,
                     $path_type,
-                    \array_merge($added_taints, $function_storage->added_taints),
+                    array_merge($added_taints, $function_storage->added_taints),
                     $removed_taints
                 );
             }
@@ -711,9 +749,9 @@ class FunctionCallReturnTypeFetcher
     /**
      * @psalm-pure
      */
-    private static function simpleExclusion(string $pattern, string $escape_char) : bool
+    private static function simpleExclusion(string $pattern, string $escape_char): bool
     {
-        $str_length = \strlen($pattern);
+        $str_length = strlen($pattern);
 
         for ($i = 0; $i < $str_length; $i++) {
             $current = $pattern[$i];

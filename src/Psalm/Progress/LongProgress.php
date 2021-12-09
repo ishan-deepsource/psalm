@@ -1,6 +1,8 @@
 <?php
 namespace Psalm\Progress;
 
+use LogicException;
+
 use function floor;
 use function sprintf;
 use function str_repeat;
@@ -45,7 +47,7 @@ class LongProgress extends Progress
         $this->write('Altering files...' . "\n");
     }
 
-    public function alterFileDone(string $file_name) : void
+    public function alterFileDone(string $file_name): void
     {
         $this->write('Altered ' . $file_name . "\n");
     }
@@ -81,10 +83,10 @@ class LongProgress extends Progress
         $this->write(PHP_EOL);
     }
 
-    protected function getOverview() : string
+    protected function getOverview(): string
     {
         if ($this->number_of_tasks === null) {
-            throw new \LogicException('Progress::start() should be called before Progress::startDone()');
+            throw new LogicException('Progress::start() should be called before Progress::startDone()');
         }
 
         $leadingSpaces = 1 + strlen((string) $this->number_of_tasks) - strlen((string) $this->progress);

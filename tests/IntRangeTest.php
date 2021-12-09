@@ -1,10 +1,13 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class IntRangeTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -640,6 +643,30 @@ class IntRangeTest extends TestCase
                             }
                         }
                     }',
+            ],
+            'positiveIntToRangeWithInferior' => [
+                '<?php
+                    /** @var positive-int $length */
+                    $length = 0;
+
+                    if ($length < 8) {
+                        throw new \RuntimeException();
+                    }',
+                'assertions' => [
+                    '$length===' => 'int<8, max>',
+                ],
+            ],
+            'positiveIntToRangeWithSuperiorOrEqual' => [
+                '<?php
+                    /** @var positive-int $length */
+                    $length = 0;
+
+                    if ($length >= 8) {
+                        throw new \RuntimeException();
+                    }',
+                'assertions' => [
+                    '$length===' => 'int<1, 7>',
+                ],
             ],
         ];
     }

@@ -4,10 +4,13 @@ namespace Psalm\Internal\Analyzer\Statements\Expression;
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Context;
+use Psalm\FileManipulation;
 use Psalm\Internal\Analyzer\Statements\Expression\Call\Method\MethodCallReturnTypeFetcher;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
+use Psalm\Internal\Codebase\VariableUseGraph;
 use Psalm\Internal\FileManipulation\FileManipulationBuffer;
+use Psalm\Internal\MethodIdentifier;
 use Psalm\Internal\Type\TypeCombiner;
 use Psalm\Issue\InvalidCast;
 use Psalm\Issue\PossiblyInvalidCast;
@@ -28,6 +31,7 @@ use Psalm\Type\Atomic\TNull;
 use Psalm\Type\Atomic\TString;
 
 use function array_merge;
+use function array_pop;
 use function array_values;
 use function count;
 use function current;
@@ -39,7 +43,7 @@ class CastAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\Cast $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         if ($stmt instanceof PhpParser\Node\Expr\Cast\Int_) {
             if (ExpressionAnalyzer::analyze($statements_analyzer, $stmt->expr, $context) === false) {
                 return false;
@@ -66,7 +70,7 @@ class CastAnalyzer
                         new Type\Atomic\TLiteralInt(1),
                     ]);
 
-                    if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
+                    if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph
                     ) {
                         $type->parent_nodes = $maybe_type->parent_nodes;
                     }
@@ -78,7 +82,7 @@ class CastAnalyzer
             if ($as_int) {
                 $type = $valid_int_type ?? Type::getInt();
 
-                if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
+                if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph
                 ) {
                     $type->parent_nodes = $maybe_type->parent_nodes ?? [];
                 }
@@ -104,7 +108,7 @@ class CastAnalyzer
 
             $type = Type::getFloat();
 
-            if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
+            if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph
             ) {
                 $type->parent_nodes = $maybe_type->parent_nodes ?? [];
             }
@@ -129,7 +133,7 @@ class CastAnalyzer
 
             $type = Type::getBool();
 
-            if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
+            if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph
             ) {
                 $type->parent_nodes = $maybe_type->parent_nodes ?? [];
             }
@@ -179,7 +183,7 @@ class CastAnalyzer
 
             $maybe_type = $statements_analyzer->node_data->getType($stmt->expr);
 
-            if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
+            if ($statements_analyzer->data_flow_graph instanceof VariableUseGraph
             ) {
                 $type->parent_nodes = $maybe_type->parent_nodes ?? [];
             }
@@ -232,8 +236,7 @@ class CastAnalyzer
                 $type = Type::getArray();
             }
 
-            if ($statements_analyzer->data_flow_graph instanceof \Psalm\Internal\Codebase\VariableUseGraph
-            ) {
+            if ($statements_analyzer->data_flow_graph) {
                 $type->parent_nodes = $stmt_expr_type->parent_nodes ?? [];
             }
 
@@ -254,15 +257,13 @@ class CastAnalyzer
             return true;
         }
 
-        if (IssueBuffer::accepts(
+        IssueBuffer::maybeAdd(
             new UnrecognizedExpression(
                 'Psalm does not understand the cast ' . get_class($stmt),
                 new CodeLocation($statements_analyzer->getSource(), $stmt)
             ),
             $statements_analyzer->getSuppressedIssues()
-        )) {
-            // fall through
-        }
+        );
 
         return false;
     }
@@ -273,7 +274,7 @@ class CastAnalyzer
         Type\Union $stmt_type,
         PhpParser\Node\Expr $stmt,
         bool $explicit_cast = false
-    ) : Type\Union {
+    ): Type\Union {
         $codebase = $statements_analyzer->getCodebase();
 
         $invalid_casts = [];
@@ -289,7 +290,7 @@ class CastAnalyzer
         }
 
         while ($atomic_types) {
-            $atomic_type = \array_pop($atomic_types);
+            $atomic_type = array_pop($atomic_types);
 
             if ($atomic_type instanceof TFloat
                 || $atomic_type instanceof TInt
@@ -339,7 +340,7 @@ class CastAnalyzer
 
                 foreach ($intersection_types as $intersection_type) {
                     if ($intersection_type instanceof TNamedObject) {
-                        $intersection_method_id = new \Psalm\Internal\MethodIdentifier(
+                        $intersection_method_id = new MethodIdentifier(
                             $intersection_type->value,
                             '__tostring'
                         );
@@ -402,25 +403,21 @@ class CastAnalyzer
 
         if ($invalid_casts) {
             if ($valid_strings || $castable_types) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new PossiblyInvalidCast(
                         $invalid_casts[0] . ' cannot be cast to string',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InvalidCast(
                         $invalid_casts[0] . ' cannot be cast to string',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
         } elseif ($explicit_cast && !$castable_types) {
             // todo: emit error here
@@ -431,7 +428,7 @@ class CastAnalyzer
         if (!$valid_types) {
             $str_type = Type::getString();
         } else {
-            $str_type = \Psalm\Internal\Type\TypeCombiner::combine(
+            $str_type = TypeCombiner::combine(
                 $valid_types,
                 $codebase
             );
@@ -462,7 +459,7 @@ class CastAnalyzer
             if ($codebase->alter_code
                 && isset($project_analyzer->getIssuesToFix()['RedundantCastGivenDocblockType'])
             ) {
-                $file_manipulation = new \Psalm\FileManipulation(
+                $file_manipulation = new FileManipulation(
                     (int) $stmt->getAttribute('startFilePos'),
                     (int) $stmt->expr->getAttribute('startFilePos'),
                     ''
@@ -477,7 +474,7 @@ class CastAnalyzer
             if ($codebase->alter_code
                 && isset($project_analyzer->getIssuesToFix()['RedundantCast'])
             ) {
-                $file_manipulation = new \Psalm\FileManipulation(
+                $file_manipulation = new FileManipulation(
                     (int) $stmt->getAttribute('startFilePos'),
                     (int) $stmt->expr->getAttribute('startFilePos'),
                     ''

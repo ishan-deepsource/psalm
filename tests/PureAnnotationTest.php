@@ -1,10 +1,13 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class PureAnnotationTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -412,6 +415,52 @@ class PureAnnotationTest extends TestCase
                           return $portNumber >= 1 && $portNumber <= 1000;
                        }
                     }'
+            ],
+            'pureThroughCallStatic' => [
+                '<?php
+
+                    /**
+                     * @method static self FOO()
+                     * @method static static BAR()
+                     * @method static static BAZ()
+                     *
+                     * @psalm-immutable
+                     */
+                    class MyEnum
+                    {
+                        const FOO = "foo";
+                        const BAR = "bar";
+                        const BAZ = "baz";
+
+                        /** @psalm-pure */
+                        public static function __callStatic(string $name, array $params): static
+                        {
+                            throw new BadMethodCallException("not implemented");
+                        }
+                    }
+
+                    /** @psalm-pure */
+                    function gimmeFoo(): MyEnum
+                    {
+                        return MyEnum::FOO();
+                    }',
+            ],
+            'dontCrashWhileCheckingPurityOnCallStaticInATrait' => [
+                '<?php
+                    /**
+                     * @method static static tt()
+                     */
+                    trait Date {
+                        public static function __callStatic(string $_method, array $_parameters){
+                        }
+                    }
+
+                    class Date2{
+                        use Date;
+                    }
+
+                    Date2::tt();
+                    ',
             ],
         ];
     }

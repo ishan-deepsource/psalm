@@ -2,33 +2,36 @@
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
 use Psalm\Internal\Analyzer\Statements\Block\ForeachAnalyzer;
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Codebase\InternalCallMapHandler;
 use Psalm\Internal\Type\Comparator\AtomicTypeComparator;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
 
+use function array_merge;
 use function array_shift;
 use function assert;
 
-class IteratorToArrayReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+class IteratorToArrayReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return [
             'iterator_to_array',
         ];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Type\Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
         $function_id = $event->getFunctionId();
         $context = $event->getContext();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer
+        if (!$statements_source instanceof StatementsAnalyzer
             || !$call_args
         ) {
             return Type::getMixed();
@@ -44,7 +47,7 @@ class IteratorToArrayReturnTypeProvider implements \Psalm\Plugin\EventHandler\Fu
 
             while ($call_arg_atomic_type = array_shift($atomic_types)) {
                 if ($call_arg_atomic_type instanceof Type\Atomic\TTemplateParam) {
-                    $atomic_types = \array_merge($atomic_types, $call_arg_atomic_type->as->getAtomicTypes());
+                    $atomic_types = array_merge($atomic_types, $call_arg_atomic_type->as->getAtomicTypes());
                     continue;
                 }
 

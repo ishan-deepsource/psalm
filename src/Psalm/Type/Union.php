@@ -1,20 +1,30 @@
 <?php
 namespace Psalm\Type;
 
+use InvalidArgumentException;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
+use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\Type\TypeCombiner;
+use Psalm\Internal\TypeVisitor\ContainsClassLikeVisitor;
+use Psalm\Internal\TypeVisitor\ContainsLiteralVisitor;
+use Psalm\Internal\TypeVisitor\FromDocblockSetter;
+use Psalm\Internal\TypeVisitor\TemplateTypeCollector;
+use Psalm\Internal\TypeVisitor\TypeChecker;
+use Psalm\Internal\TypeVisitor\TypeScanner;
 use Psalm\StatementsSource;
 use Psalm\Storage\FileStorage;
 use Psalm\Type;
 use Psalm\Type\Atomic\TFloat;
 use Psalm\Type\Atomic\TInt;
+use Psalm\Type\Atomic\TIntRange;
 use Psalm\Type\Atomic\TLiteralFloat;
 use Psalm\Type\Atomic\TLiteralInt;
 use Psalm\Type\Atomic\TLiteralString;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TString;
 use Psalm\Type\Atomic\TTemplateParam;
+use UnexpectedValueException;
 
 use function array_filter;
 use function array_merge;
@@ -189,7 +199,7 @@ class Union implements TypeNode
     private $id;
 
     /**
-     * @var array<string, \Psalm\Internal\DataFlow\DataFlowNode>
+     * @var array<string, DataFlowNode>
      */
     public $parent_nodes = [];
 
@@ -236,7 +246,7 @@ class Union implements TypeNode
     /**
      * @param non-empty-array<string, Atomic>  $types
      */
-    public function replaceTypes(array $types) : void
+    public function replaceTypes(array $types): void
     {
         $this->types = $types;
     }
@@ -271,8 +281,12 @@ class Union implements TypeNode
                 }
             }
         } elseif ($type instanceof TInt && $this->literal_int_types) {
-            foreach ($this->literal_int_types as $key => $_) {
-                unset($this->literal_int_types[$key], $this->types[$key]);
+            //we remove any literal that is already included in a wider type
+            $int_type_in_range = TIntRange::convertToIntRange($type);
+            foreach ($this->literal_int_types as $key => $literal_int_type) {
+                if ($int_type_in_range->contains($literal_int_type->value)) {
+                    unset($this->literal_int_types[$key], $this->types[$key]);
+                }
             }
         } elseif ($type instanceof TFloat && $this->literal_float_types) {
             foreach ($this->literal_float_types as $key => $_) {
@@ -343,7 +357,7 @@ class Union implements TypeNode
         return implode('|', $types);
     }
 
-    public function getKey() : string
+    public function getKey(): string
     {
         $types = [];
 
@@ -394,7 +408,7 @@ class Union implements TypeNode
         }
         sort($types);
 
-        if (\count($types) > 1) {
+        if (count($types) > 1) {
             foreach ($types as $i => $type) {
                 if (strpos($type, ' as ') && strpos($type, '(') === false) {
                     $types[$i] = '(' . $type . ')';
@@ -418,7 +432,7 @@ class Union implements TypeNode
 
         $assertions = array_unique($assertions);
         if (count($assertions) !== 1) {
-            throw new \UnexpectedValueException('Should only be one type per assertion');
+            throw new UnexpectedValueException('Should only be one type per assertion');
         }
 
         return reset($assertions);
@@ -471,7 +485,7 @@ class Union implements TypeNode
         }
 
         sort($other_types);
-        return implode('|', \array_unique($other_types));
+        return implode('|', array_unique($other_types));
     }
 
     /**
@@ -651,7 +665,7 @@ class Union implements TypeNode
         return isset($this->types['array']) && $this->types['array'] instanceof Atomic\TClassStringMap;
     }
 
-    public function isTemplatedClassString() : bool
+    public function isTemplatedClassString(): bool
     {
         return $this->isSingle()
             && count(
@@ -664,7 +678,7 @@ class Union implements TypeNode
             ) === 1;
     }
 
-    public function hasArrayAccessInterface(Codebase $codebase) : bool
+    public function hasArrayAccessInterface(Codebase $codebase): bool
     {
         return (bool)array_filter(
             $this->types,
@@ -883,7 +897,7 @@ class Union implements TypeNode
     {
         return (bool) array_filter(
             $this->types,
-            function (Atomic $type) : bool {
+            function (Atomic $type): bool {
                 return $type instanceof Type\Atomic\TTemplateParam
                     || ($type instanceof Type\Atomic\TNamedObject
                         && $type->extra_types
@@ -902,7 +916,7 @@ class Union implements TypeNode
     {
         return (bool) array_filter(
             $this->types,
-            function (Atomic $type) : bool {
+            function (Atomic $type): bool {
                 return $type instanceof Type\Atomic\TConditional;
             }
         );
@@ -912,7 +926,7 @@ class Union implements TypeNode
     {
         return (bool) array_filter(
             $this->types,
-            function (Atomic $type) : bool {
+            function (Atomic $type): bool {
                 return $type instanceof Type\Atomic\TTemplateParam
                     || ($type instanceof Type\Atomic\TNamedObject
                         && ($type->was_static
@@ -943,7 +957,8 @@ class Union implements TypeNode
     public function isEmptyMixed(): bool
     {
         return isset($this->types['mixed'])
-            && $this->types['mixed'] instanceof Type\Atomic\TEmptyMixed;
+            && $this->types['mixed'] instanceof Type\Atomic\TEmptyMixed
+            && count($this->types) === 1;
     }
 
     public function isVanillaMixed(): bool
@@ -1087,7 +1102,8 @@ class Union implements TypeNode
             }
 
             if ($atomic_type instanceof Type\Atomic\TNamedObject
-                && $atomic_type->value !== 'SimpleXMLElement') {
+                && $atomic_type->value !== 'SimpleXMLElement'
+                && $atomic_type->value !== 'SimpleXMLIterator') {
                 continue;
             }
 
@@ -1140,12 +1156,12 @@ class Union implements TypeNode
 
     public function isVoid(): bool
     {
-        return isset($this->types['void']);
+        return isset($this->types['void']) && count($this->types) === 1;
     }
 
     public function isNever(): bool
     {
-        return isset($this->types['never']);
+        return isset($this->types['never']) && count($this->types) === 1;
     }
 
     public function isGenerator(): bool
@@ -1157,7 +1173,7 @@ class Union implements TypeNode
 
     public function isEmpty(): bool
     {
-        return isset($this->types['empty']);
+        return isset($this->types['empty']) && count($this->types) === 1;
     }
 
     public function substitute(Union $old_type, ?Union $new_type = null): void
@@ -1373,20 +1389,20 @@ class Union implements TypeNode
     }
 
     /**
-     * @throws \InvalidArgumentException if isSingleStringLiteral is false
+     * @throws InvalidArgumentException if isSingleStringLiteral is false
      *
      * @return TLiteralString the only string literal represented by this union type
      */
     public function getSingleStringLiteral(): TLiteralString
     {
         if (count($this->types) !== 1 || count($this->literal_string_types) !== 1) {
-            throw new \InvalidArgumentException('Not a string literal');
+            throw new InvalidArgumentException('Not a string literal');
         }
 
         return reset($this->literal_string_types);
     }
 
-    public function allStringLiterals() : bool
+    public function allStringLiterals(): bool
     {
         foreach ($this->types as $atomic_key_type) {
             if (!$atomic_key_type instanceof TLiteralString) {
@@ -1397,7 +1413,7 @@ class Union implements TypeNode
         return true;
     }
 
-    public function allIntLiterals() : bool
+    public function allIntLiterals(): bool
     {
         foreach ($this->types as $atomic_key_type) {
             if (!$atomic_key_type instanceof TLiteralInt) {
@@ -1408,7 +1424,7 @@ class Union implements TypeNode
         return true;
     }
 
-    public function allLiterals() : bool
+    public function allLiterals(): bool
     {
         foreach ($this->types as $atomic_key_type) {
             if (!$atomic_key_type instanceof TLiteralString
@@ -1426,7 +1442,7 @@ class Union implements TypeNode
         return true;
     }
 
-    public function hasLiteralValue() : bool
+    public function hasLiteralValue(): bool
     {
         return $this->literal_int_types
             || $this->literal_string_types
@@ -1454,14 +1470,14 @@ class Union implements TypeNode
     }
 
     /**
-     * @throws \InvalidArgumentException if isSingleIntLiteral is false
+     * @throws InvalidArgumentException if isSingleIntLiteral is false
      *
      * @return TLiteralInt the only int literal represented by this union type
      */
     public function getSingleIntLiteral(): TLiteralInt
     {
         if (count($this->types) !== 1 || count($this->literal_int_types) !== 1) {
-            throw new \InvalidArgumentException('Not an int literal');
+            throw new InvalidArgumentException('Not an int literal');
         }
 
         return reset($this->literal_int_types);
@@ -1481,12 +1497,12 @@ class Union implements TypeNode
         bool $inherited = false,
         bool $prevent_template_covariance = false,
         ?string $calling_method_id = null
-    ) : bool {
+    ): bool {
         if ($this->checked) {
             return true;
         }
 
-        $checker = new \Psalm\Internal\TypeVisitor\TypeChecker(
+        $checker = new TypeChecker(
             $source,
             $code_location,
             $suppressed_issues,
@@ -1513,7 +1529,7 @@ class Union implements TypeNode
         ?FileStorage $file_storage = null,
         array $phantom_classes = []
     ): void {
-        $scanner_visitor = new \Psalm\Internal\TypeVisitor\TypeScanner(
+        $scanner_visitor = new TypeScanner(
             $codebase->scanner,
             $file_storage,
             $phantom_classes
@@ -1525,18 +1541,18 @@ class Union implements TypeNode
     /**
      * @param  lowercase-string $fq_class_like_name
      */
-    public function containsClassLike(string $fq_class_like_name) : bool
+    public function containsClassLike(string $fq_class_like_name): bool
     {
-        $classlike_visitor = new \Psalm\Internal\TypeVisitor\ContainsClassLikeVisitor($fq_class_like_name);
+        $classlike_visitor = new ContainsClassLikeVisitor($fq_class_like_name);
 
         $classlike_visitor->traverseArray($this->types);
 
         return $classlike_visitor->matches();
     }
 
-    public function containsAnyLiteral() : bool
+    public function containsAnyLiteral(): bool
     {
-        $literal_visitor = new \Psalm\Internal\TypeVisitor\ContainsLiteralVisitor();
+        $literal_visitor = new ContainsLiteralVisitor();
 
         $literal_visitor->traverseArray($this->types);
 
@@ -1548,7 +1564,7 @@ class Union implements TypeNode
      */
     public function getTemplateTypes(): array
     {
-        $template_type_collector = new \Psalm\Internal\TypeVisitor\TemplateTypeCollector();
+        $template_type_collector = new TemplateTypeCollector();
 
         $template_type_collector->traverseArray($this->types);
 
@@ -1559,10 +1575,10 @@ class Union implements TypeNode
     {
         $this->from_docblock = true;
 
-        (new \Psalm\Internal\TypeVisitor\FromDocblockSetter())->traverseArray($this->types);
+        (new FromDocblockSetter())->traverseArray($this->types);
     }
 
-    public function replaceClassLike(string $old, string $new) : void
+    public function replaceClassLike(string $old, string $new): void
     {
         foreach ($this->types as $key => $atomic_type) {
             $atomic_type->replaceClassLike($old, $new);
@@ -1675,7 +1691,7 @@ class Union implements TypeNode
     /**
      * @return array<string, Atomic>
      */
-    public function getChildNodes() : array
+    public function getChildNodes(): array
     {
         return $this->types;
     }
@@ -1689,14 +1705,14 @@ class Union implements TypeNode
     }
 
     /**
-     * @throws \InvalidArgumentException if isSingleFloatLiteral is false
+     * @throws InvalidArgumentException if isSingleFloatLiteral is false
      *
      * @return TLiteralFloat the only float literal represented by this union type
      */
     public function getSingleFloatLiteral(): TLiteralFloat
     {
         if (count($this->types) !== 1 || count($this->literal_float_types) !== 1) {
-            throw new \InvalidArgumentException('Not a float literal');
+            throw new InvalidArgumentException('Not a float literal');
         }
 
         return reset($this->literal_float_types);

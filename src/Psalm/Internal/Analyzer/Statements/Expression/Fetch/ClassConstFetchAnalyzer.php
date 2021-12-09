@@ -1,9 +1,12 @@
 <?php
 namespace Psalm\Internal\Analyzer\Statements\Expression\Fetch;
 
+use InvalidArgumentException;
 use PhpParser;
 use Psalm\CodeLocation;
 use Psalm\Context;
+use Psalm\Exception\CircularReferenceException;
+use Psalm\FileManipulation;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\ClassLikeNameOptions;
 use Psalm\Internal\Analyzer\NamespaceAnalyzer;
@@ -23,9 +26,11 @@ use Psalm\IssueBuffer;
 use Psalm\Type;
 use Psalm\Type\Atomic\TLiteralClassString;
 use Psalm\Type\Atomic\TNamedObject;
+use ReflectionProperty;
 
 use function array_values;
 use function explode;
+use function in_array;
 use function strtolower;
 
 /**
@@ -41,7 +46,7 @@ class ClassConstFetchAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\ClassConstFetch $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $codebase = $statements_analyzer->getCodebase();
 
         $statements_analyzer->node_data->setType($stmt, Type::getMixed());
@@ -111,7 +116,7 @@ class ClassConstFetchAnalyzer
             $moved_class = false;
 
             if ($codebase->alter_code
-                && !\in_array($stmt->class->parts[0], ['parent', 'static'])
+                && !in_array($stmt->class->parts[0], ['parent', 'static'])
             ) {
                 $moved_class = $codebase->classlikes->handleClassLikeReferenceInMigration(
                     $codebase,
@@ -134,16 +139,14 @@ class ClassConstFetchAnalyzer
                     $fq_class_name = $const_class_storage->name;
 
                     if ($const_class_storage->deprecated && $fq_class_name !== $context->self) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new DeprecatedClass(
                                 'Class ' . $fq_class_name . ' is deprecated',
                                 new CodeLocation($statements_analyzer->getSource(), $stmt),
                                 $fq_class_name
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 }
 
@@ -210,53 +213,41 @@ class ClassConstFetchAnalyzer
 
             $const_class_storage = $codebase->classlike_storage_provider->get($fq_class_name);
 
-            if ($const_class_storage->is_enum) {
-                if (isset($const_class_storage->enum_cases[$stmt->name->name])) {
-                    $class_constant_type = new Type\Union([
-                        new Type\Atomic\TEnumCase($fq_class_name, $stmt->name->name)
-                    ]);
-                } else {
-                    $class_constant_type = null;
-                }
+            if ($fq_class_name === $context->self
+                || (
+                    $statements_analyzer->getSource()->getSource() instanceof TraitAnalyzer &&
+                    $fq_class_name === $statements_analyzer->getSource()->getFQCLN()
+                )
+            ) {
+                $class_visibility = ReflectionProperty::IS_PRIVATE;
+            } elseif ($context->self &&
+                ($codebase->classlikes->classExtends($context->self, $fq_class_name)
+                    || $codebase->classlikes->classExtends($fq_class_name, $context->self))
+            ) {
+                $class_visibility = ReflectionProperty::IS_PROTECTED;
             } else {
-                if ($fq_class_name === $context->self
-                    || (
-                        $statements_analyzer->getSource()->getSource() instanceof TraitAnalyzer &&
-                        $fq_class_name === $statements_analyzer->getSource()->getFQCLN()
-                    )
-                ) {
-                    $class_visibility = \ReflectionProperty::IS_PRIVATE;
-                } elseif ($context->self &&
-                    ($codebase->classlikes->classExtends($context->self, $fq_class_name)
-                        || $codebase->classlikes->classExtends($fq_class_name, $context->self))
-                ) {
-                    $class_visibility = \ReflectionProperty::IS_PROTECTED;
-                } else {
-                    $class_visibility = \ReflectionProperty::IS_PUBLIC;
-                }
+                $class_visibility = ReflectionProperty::IS_PUBLIC;
+            }
 
-                try {
-                    $class_constant_type = $codebase->classlikes->getClassConstantType(
-                        $fq_class_name,
-                        $stmt->name->name,
-                        $class_visibility,
-                        $statements_analyzer
-                    );
-                } catch (\InvalidArgumentException $_) {
-                    return true;
-                } catch (\Psalm\Exception\CircularReferenceException $e) {
-                    if (IssueBuffer::accepts(
-                        new CircularReference(
-                            'Constant ' . $const_id . ' contains a circular reference',
-                            new CodeLocation($statements_analyzer->getSource(), $stmt)
-                        ),
-                        $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+            try {
+                $class_constant_type = $codebase->classlikes->getClassConstantType(
+                    $fq_class_name,
+                    $stmt->name->name,
+                    $class_visibility,
+                    $statements_analyzer
+                );
+            } catch (InvalidArgumentException $_) {
+                return true;
+            } catch (CircularReferenceException $e) {
+                IssueBuffer::maybeAdd(
+                    new CircularReference(
+                        'Constant ' . $const_id . ' contains a circular reference',
+                        new CodeLocation($statements_analyzer->getSource(), $stmt)
+                    ),
+                    $statements_analyzer->getSuppressedIssues()
+                );
 
-                    return true;
-                }
+                return true;
             }
 
             if (!$class_constant_type) {
@@ -264,31 +255,27 @@ class ClassConstFetchAnalyzer
                     $class_constant_type = $codebase->classlikes->getClassConstantType(
                         $fq_class_name,
                         $stmt->name->name,
-                        \ReflectionProperty::IS_PRIVATE,
+                        ReflectionProperty::IS_PRIVATE,
                         $statements_analyzer
                     );
                 }
 
                 if ($class_constant_type) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InaccessibleClassConstant(
                             'Constant ' . $const_id . ' is not visible in this context',
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } elseif ($context->check_consts) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new UndefinedConstant(
                             'Constant ' . $const_id . ' is not defined',
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
 
                 return true;
@@ -312,7 +299,7 @@ class ClassConstFetchAnalyzer
                         $file_manipulations = [];
 
                         if (strtolower($new_fq_class_name) !== $fq_class_name_lc) {
-                            $file_manipulations[] = new \Psalm\FileManipulation(
+                            $file_manipulations[] = new FileManipulation(
                                 (int) $stmt->class->getAttribute('startFilePos'),
                                 (int) $stmt->class->getAttribute('endFilePos') + 1,
                                 Type::getStringFromFQCLN(
@@ -324,7 +311,7 @@ class ClassConstFetchAnalyzer
                             );
                         }
 
-                        $file_manipulations[] = new \Psalm\FileManipulation(
+                        $file_manipulations[] = new FileManipulation(
                             (int) $stmt->name->getAttribute('startFilePos'),
                             (int) $stmt->name->getAttribute('endFilePos') + 1,
                             $new_const_name
@@ -341,7 +328,7 @@ class ClassConstFetchAnalyzer
                 && $const_class_storage->internal
                 && !NamespaceAnalyzer::isWithin($context->self, $const_class_storage->internal)
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InternalClass(
                         $fq_class_name . ' is internal to ' . $const_class_storage->internal
                             . ' but called from ' . $context->self,
@@ -349,34 +336,28 @@ class ClassConstFetchAnalyzer
                         $fq_class_name
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             if ($const_class_storage->deprecated && $fq_class_name !== $context->self) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new DeprecatedClass(
                         'Class ' . $fq_class_name . ' is deprecated',
                         new CodeLocation($statements_analyzer->getSource(), $stmt),
                         $fq_class_name
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } elseif (isset($const_class_storage->constants[$stmt->name->name])
                 && $const_class_storage->constants[$stmt->name->name]->deprecated
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new DeprecatedConstant(
                         'Constant ' . $const_id . ' is deprecated',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             if ($first_part_lc !== 'static' || $const_class_storage->final) {
@@ -454,7 +435,7 @@ class ClassConstFetchAnalyzer
             $fq_class_name = null;
             $lhs_type_definite_class = null;
             if ($lhs_type->isSingle()) {
-                $atomic_type = \array_values($lhs_type->getAtomicTypes())[0];
+                $atomic_type = array_values($lhs_type->getAtomicTypes())[0];
                 if ($atomic_type instanceof TNamedObject) {
                     $fq_class_name = $atomic_type->value;
                     $lhs_type_definite_class = $atomic_type->definite_class;
@@ -519,53 +500,41 @@ class ClassConstFetchAnalyzer
 
             $const_class_storage = $codebase->classlike_storage_provider->get($fq_class_name);
 
-            if ($const_class_storage->is_enum) {
-                if (isset($const_class_storage->enum_cases[$stmt->name->name])) {
-                    $class_constant_type = new Type\Union([
-                        new Type\Atomic\TEnumCase($fq_class_name, $stmt->name->name)
-                    ]);
-                } else {
-                    $class_constant_type = null;
-                }
+            if ($fq_class_name === $context->self
+                || (
+                    $statements_analyzer->getSource()->getSource() instanceof TraitAnalyzer &&
+                    $fq_class_name === $statements_analyzer->getSource()->getFQCLN()
+                )
+            ) {
+                $class_visibility = ReflectionProperty::IS_PRIVATE;
+            } elseif ($context->self &&
+                ($codebase->classlikes->classExtends($context->self, $fq_class_name)
+                    || $codebase->classlikes->classExtends($fq_class_name, $context->self))
+            ) {
+                $class_visibility = ReflectionProperty::IS_PROTECTED;
             } else {
-                if ($fq_class_name === $context->self
-                    || (
-                        $statements_analyzer->getSource()->getSource() instanceof TraitAnalyzer &&
-                        $fq_class_name === $statements_analyzer->getSource()->getFQCLN()
-                    )
-                ) {
-                    $class_visibility = \ReflectionProperty::IS_PRIVATE;
-                } elseif ($context->self &&
-                    ($codebase->classlikes->classExtends($context->self, $fq_class_name)
-                        || $codebase->classlikes->classExtends($fq_class_name, $context->self))
-                ) {
-                    $class_visibility = \ReflectionProperty::IS_PROTECTED;
-                } else {
-                    $class_visibility = \ReflectionProperty::IS_PUBLIC;
-                }
+                $class_visibility = ReflectionProperty::IS_PUBLIC;
+            }
 
-                try {
-                    $class_constant_type = $codebase->classlikes->getClassConstantType(
-                        $fq_class_name,
-                        $stmt->name->name,
-                        $class_visibility,
-                        $statements_analyzer
-                    );
-                } catch (\InvalidArgumentException $_) {
-                    return true;
-                } catch (\Psalm\Exception\CircularReferenceException $e) {
-                    if (IssueBuffer::accepts(
-                        new CircularReference(
-                            'Constant ' . $const_id . ' contains a circular reference',
-                            new CodeLocation($statements_analyzer->getSource(), $stmt)
-                        ),
-                        $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+            try {
+                $class_constant_type = $codebase->classlikes->getClassConstantType(
+                    $fq_class_name,
+                    $stmt->name->name,
+                    $class_visibility,
+                    $statements_analyzer
+                );
+            } catch (InvalidArgumentException $_) {
+                return true;
+            } catch (CircularReferenceException $e) {
+                IssueBuffer::maybeAdd(
+                    new CircularReference(
+                        'Constant ' . $const_id . ' contains a circular reference',
+                        new CodeLocation($statements_analyzer->getSource(), $stmt)
+                    ),
+                    $statements_analyzer->getSuppressedIssues()
+                );
 
-                    return true;
-                }
+                return true;
             }
 
             if (!$class_constant_type) {
@@ -573,31 +542,27 @@ class ClassConstFetchAnalyzer
                     $class_constant_type = $codebase->classlikes->getClassConstantType(
                         $fq_class_name,
                         $stmt->name->name,
-                        \ReflectionProperty::IS_PRIVATE,
+                        ReflectionProperty::IS_PRIVATE,
                         $statements_analyzer
                     );
                 }
 
                 if ($class_constant_type) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InaccessibleClassConstant(
                             'Constant ' . $const_id . ' is not visible in this context',
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 } elseif ($context->check_consts) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new UndefinedConstant(
                             'Constant ' . $const_id . ' is not defined',
                             new CodeLocation($statements_analyzer->getSource(), $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
 
                 return true;
@@ -620,7 +585,7 @@ class ClassConstFetchAnalyzer
 
                         $file_manipulations = [];
 
-                        $file_manipulations[] = new \Psalm\FileManipulation(
+                        $file_manipulations[] = new FileManipulation(
                             (int) $stmt->name->getAttribute('startFilePos'),
                             (int) $stmt->name->getAttribute('endFilePos') + 1,
                             $new_const_name
@@ -637,7 +602,7 @@ class ClassConstFetchAnalyzer
                 && $const_class_storage->internal
                 && !NamespaceAnalyzer::isWithin($context->self, $const_class_storage->internal)
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InternalClass(
                         $fq_class_name . ' is internal to ' . $const_class_storage->internal
                         . ' but called from ' . $context->self,
@@ -645,34 +610,28 @@ class ClassConstFetchAnalyzer
                         $fq_class_name
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             if ($const_class_storage->deprecated && $fq_class_name !== $context->self) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new DeprecatedClass(
                         'Class ' . $fq_class_name . ' is deprecated',
                         new CodeLocation($statements_analyzer->getSource(), $stmt),
                         $fq_class_name
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             } elseif (isset($const_class_storage->constants[$stmt->name->name])
                 && $const_class_storage->constants[$stmt->name->name]->deprecated
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new DeprecatedConstant(
                         'Constant ' . $const_id . ' is deprecated',
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     ),
                     $statements_analyzer->getSuppressedIssues()
-                )) {
-                    // fall through
-                }
+                );
             }
 
             if ($const_class_storage->final || $lhs_type_definite_class === true) {

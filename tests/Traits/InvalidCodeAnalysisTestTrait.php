@@ -3,12 +3,18 @@ namespace Psalm\Tests\Traits;
 
 use Psalm\Config;
 use Psalm\Context;
+use Psalm\Exception\CodeException;
 
 use function is_int;
+use function method_exists;
 use function preg_quote;
+use function str_replace;
 use function strpos;
+use function strtoupper;
+use function substr;
 use function version_compare;
 
+use const PHP_OS;
 use const PHP_VERSION;
 
 trait InvalidCodeAnalysisTestTrait
@@ -26,8 +32,6 @@ trait InvalidCodeAnalysisTestTrait
      * @param string $error_message
      * @param array<int|string, string> $error_levels
      * @param bool $strict_mode
-     *
-     * @return void
      */
     public function testInvalidCode(
         $code,
@@ -35,26 +39,22 @@ trait InvalidCodeAnalysisTestTrait
         $error_levels = [],
         $strict_mode = false,
         string $php_version = '7.3'
-    ) {
+    ): void {
         $test_name = $this->getTestName();
         if (strpos($test_name, 'PHP71-') !== false) {
             if (version_compare(PHP_VERSION, '7.1.0', '<')) {
                 $this->markTestSkipped('Test case requires PHP 7.1.');
-
-                return;
             }
         } elseif (strpos($test_name, 'PHP80-') !== false) {
             if (version_compare(PHP_VERSION, '8.0.0', '<')) {
                 $this->markTestSkipped('Test case requires PHP 8.0.');
-
-                return;
             }
         } elseif (strpos($test_name, 'SKIPPED-') !== false) {
             $this->markTestSkipped('Skipped due to a bug.');
         }
 
-        if (\strtoupper(\substr(\PHP_OS, 0, 3)) === 'WIN') {
-            $code = \str_replace("\n", "\r\n", $code);
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            $code = str_replace("\n", "\r\n", $code);
         }
 
         if ($strict_mode) {
@@ -72,15 +72,15 @@ trait InvalidCodeAnalysisTestTrait
             Config::getInstance()->setCustomErrorLevel($issue_name, $error_level);
         }
 
-        $this->project_analyzer->setPhpVersion($php_version);
+        $this->project_analyzer->setPhpVersion($php_version, 'tests');
 
         $file_path = self::$src_dir_path . 'somefile.php';
 
         // $error_message = preg_replace('/ src[\/\\\\]somefile\.php/', ' src/somefile.php', $error_message);
 
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
 
-        if (\method_exists($this, 'expectExceptionMessageMatches')) {
+        if (method_exists($this, 'expectExceptionMessageMatches')) {
             $this->expectExceptionMessageMatches('/\b' . preg_quote($error_message, '/') . '\b/');
         } else {
             $this->expectExceptionMessageRegExp('/\b' . preg_quote($error_message, '/') . '\b/');

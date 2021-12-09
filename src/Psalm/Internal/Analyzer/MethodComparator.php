@@ -2,13 +2,19 @@
 namespace Psalm\Internal\Analyzer;
 
 use PhpParser\Node\Stmt\ClassMethod;
+use PhpParser\NodeTraverser;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
+use Psalm\Config;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
+use Psalm\Internal\FileManipulation\FileManipulationBuffer;
 use Psalm\Internal\MethodIdentifier;
 use Psalm\Internal\PhpVisitor\ParamReplacementVisitor;
 use Psalm\Internal\Type\Comparator\TypeComparisonResult;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Internal\Type\TemplateInferredTypeReplacer;
+use Psalm\Internal\Type\TemplateResult;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\ConstructorSignatureMismatch;
 use Psalm\Issue\ImplementedParamTypeMismatch;
 use Psalm\Issue\ImplementedReturnTypeMismatch;
@@ -219,7 +225,7 @@ class MethodComparator
         bool $trait_mismatches_are_fatal,
         CodeLocation $code_location,
         array $suppressed_issues
-    ) : void {
+    ): void {
         if ($implementer_visibility > $guide_visibility) {
             if ($trait_mismatches_are_fatal
                 || $guide_classlike_storage->is_trait === $implementer_classlike_storage->is_trait
@@ -228,16 +234,14 @@ class MethodComparator
                 || (!$implementer_method_storage->abstract
                     && !$guide_method_storage->abstract)
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new OverriddenMethodAccess(
                         'Method ' . $cased_implementer_method_id . ' has different access level than '
                             . $cased_guide_method_id,
                         $code_location
                     ),
                     $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             } elseif (IssueBuffer::accepts(
                 new TraitMethodSignatureMismatch(
                     'Method ' . $cased_implementer_method_id . ' has different access level than '
@@ -254,7 +258,7 @@ class MethodComparator
             && $prevent_method_signature_mismatch
             && $prevent_abstract_override
         ) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new MethodSignatureMismatch(
                     'Method ' . $cased_guide_method_id . ' is declared final and cannot be overridden',
                     $code_location
@@ -262,9 +266,7 @@ class MethodComparator
                 $guide_method_storage->final_from_docblock ?
                     $suppressed_issues + $implementer_classlike_storage->suppressed_issues :
                     []
-            )) {
-                // fall through
-            }
+            );
         }
 
         if ($prevent_abstract_override
@@ -273,16 +275,14 @@ class MethodComparator
             && !$guide_classlike_storage->abstract
             && !$guide_classlike_storage->is_interface
         ) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new MethodSignatureMismatch(
                     'Method ' . $cased_implementer_method_id . ' cannot be abstract when inherited method '
                         . $cased_guide_method_id . ' is non-abstract',
                     $code_location
                 ),
                 $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-            )) {
-                // fall through
-            }
+            );
         }
 
         if ($guide_method_storage->external_mutation_free
@@ -290,7 +290,7 @@ class MethodComparator
             && !$guide_method_storage->mutation_free_inferred
             && $prevent_method_signature_mismatch
         ) {
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new MissingImmutableAnnotation(
                     $cased_guide_method_id . ' is marked @psalm-immutable, but '
                         . $implementer_classlike_storage->name . '::'
@@ -299,9 +299,7 @@ class MethodComparator
                     $code_location
                 ),
                 $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-            )) {
-                // fall through
-            }
+            );
         }
     }
 
@@ -324,7 +322,7 @@ class MethodComparator
         bool $prevent_method_signature_mismatch,
         CodeLocation $code_location,
         array $suppressed_issues
-    ) : void {
+    ): void {
         if ($prevent_method_signature_mismatch) {
             if (!$guide_classlike_storage->user_defined
                 && $guide_param->type
@@ -350,7 +348,7 @@ class MethodComparator
                     && !$guide_param->type->from_docblock
                     && ($implementer_param_type || $guide_param_signature_type)
                 ) {
-                    $config = \Psalm\Config::getInstance();
+                    $config = Config::getInstance();
 
                     if ($implementer_param_type
                         && (!$guide_param_signature_type
@@ -361,7 +359,7 @@ class MethodComparator
                                 !== strtolower($or_null_guide_param_signature_type->getId()))
                     ) {
                         if ($implementer_method_storage->cased_name === '__construct') {
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new ConstructorSignatureMismatch(
                                     'Argument ' . ($i + 1) . ' of '
                                         . $cased_implementer_method_id . ' has wrong type \''
@@ -376,11 +374,9 @@ class MethodComparator
                                         : $code_location
                                 ),
                                 $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                            )) {
-                                // fall through
-                            }
+                            );
                         } else {
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new MethodSignatureMismatch(
                                     'Argument ' . ($i + 1) . ' of '
                                         . $cased_implementer_method_id . ' has wrong type \''
@@ -395,9 +391,7 @@ class MethodComparator
                                         : $code_location
                                 ),
                                 $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                            )) {
-                                // fall through
-                            }
+                            );
                         }
 
 
@@ -406,7 +400,7 @@ class MethodComparator
                 }
             }
 
-            $config = \Psalm\Config::getInstance();
+            $config = Config::getInstance();
 
             if ($guide_param->name !== $implementer_param->name
                 && $guide_method_storage->allow_named_arg_calls
@@ -425,7 +419,7 @@ class MethodComparator
                     )
                 ) {
                     if ($codebase->alter_code) {
-                        $project_analyzer = \Psalm\Internal\Analyzer\ProjectAnalyzer::getInstance();
+                        $project_analyzer = ProjectAnalyzer::getInstance();
 
                         if ($stmt && isset($project_analyzer->getIssuesToFix()['ParamNameMismatch'])) {
                             $param_replacer = new ParamReplacementVisitor(
@@ -433,19 +427,19 @@ class MethodComparator
                                 $guide_param->name
                             );
 
-                            $traverser = new \PhpParser\NodeTraverser();
+                            $traverser = new NodeTraverser();
                             $traverser->addVisitor($param_replacer);
                             $traverser->traverse([$stmt]);
 
                             if ($replacements = $param_replacer->getReplacements()) {
-                                \Psalm\Internal\FileManipulation\FileManipulationBuffer::add(
+                                FileManipulationBuffer::add(
                                     $implementer_param->location->file_path,
                                     $replacements
                                 );
                             }
                         }
                     } else {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new ParamNameMismatch(
                                 'Argument ' . ($i + 1) . ' of ' . $cased_implementer_method_id . ' has wrong name $'
                                     . $implementer_param->name . ', expecting $'
@@ -454,9 +448,7 @@ class MethodComparator
                                 $implementer_param->location
                             ),
                             $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 }
             }
@@ -503,9 +495,9 @@ class MethodComparator
         }
 
         if ($guide_classlike_storage->user_defined && $implementer_param->by_ref !== $guide_param->by_ref) {
-            $config = \Psalm\Config::getInstance();
+            $config = Config::getInstance();
 
-            if (IssueBuffer::accepts(
+            IssueBuffer::maybeAdd(
                 new MethodSignatureMismatch(
                     'Argument ' . ($i + 1) . ' of ' . $cased_implementer_method_id . ' is' .
                         ($implementer_param->by_ref ? '' : ' not') . ' passed by reference, but argument ' .
@@ -518,9 +510,7 @@ class MethodComparator
                         : $code_location
                 ),
                 $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-            )) {
-                // fall through
-            }
+            );
         }
     }
 
@@ -540,9 +530,9 @@ class MethodComparator
         string $cased_implementer_method_id,
         CodeLocation $code_location,
         array $suppressed_issues
-    ) : void {
+    ): void {
         $guide_param_signature_type = $guide_param->signature_type
-            ? \Psalm\Internal\Type\TypeExpander::expandUnion(
+            ? TypeExpander::expandUnion(
                 $codebase,
                 $guide_param->signature_type,
                 $guide_classlike_storage->is_trait && $guide_method_storage->abstract
@@ -557,7 +547,7 @@ class MethodComparator
             )
             : null;
 
-        $implementer_param_signature_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+        $implementer_param_signature_type = TypeExpander::expandUnion(
             $codebase,
             $implementer_param_signature_type,
             $implementer_classlike_storage->name,
@@ -579,7 +569,7 @@ class MethodComparator
                 $implementer_param_signature_type
             );
         if (!$is_contained_by) {
-            $config = \Psalm\Config::getInstance();
+            $config = Config::getInstance();
 
             if ($codebase->php_major_version >= 8
                 || $guide_classlike_storage->is_trait === $implementer_classlike_storage->is_trait
@@ -589,7 +579,7 @@ class MethodComparator
                     && !$guide_method_storage->abstract)
             ) {
                 if ($implementer_method_storage->cased_name === '__construct') {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new ConstructorSignatureMismatch(
                             'Argument ' . ($i + 1) . ' of '
                                 . $cased_implementer_method_id
@@ -605,11 +595,9 @@ class MethodComparator
                                 : $code_location
                         ),
                         $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                    )) {
-                        // fall through
-                    }
+                    );
                 } else {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new MethodSignatureMismatch(
                             'Argument ' . ($i + 1) . ' of '
                                 . $cased_implementer_method_id
@@ -625,12 +613,10 @@ class MethodComparator
                                 : $code_location
                         ),
                         $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new TraitMethodSignatureMismatch(
                         'Argument ' . ($i + 1) . ' of ' . $cased_implementer_method_id . ' has wrong type \'' .
                             $implementer_param_signature_type . '\', expecting \'' .
@@ -644,9 +630,7 @@ class MethodComparator
                             : $code_location
                     ),
                     $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             }
         }
     }
@@ -668,8 +652,8 @@ class MethodComparator
         Type\Union $implementer_param_type,
         CodeLocation $code_location,
         array $suppressed_issues
-    ) : void {
-        $implementer_method_storage_param_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+    ): void {
+        $implementer_method_storage_param_type = TypeExpander::expandUnion(
             $codebase,
             $implementer_param_type,
             $implementer_classlike_storage->name,
@@ -677,7 +661,7 @@ class MethodComparator
             $implementer_classlike_storage->parent_class
         );
 
-        $guide_method_storage_param_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+        $guide_method_storage_param_type = TypeExpander::expandUnion(
             $codebase,
             $guide_param_type,
             $guide_classlike_storage->is_trait && $guide_method_storage->abstract
@@ -719,7 +703,7 @@ class MethodComparator
 
         foreach ($implementer_method_storage_param_type->getAtomicTypes() as $k => $t) {
             if ($t instanceof Type\Atomic\TTemplateParam
-                && \strpos($t->defining_class, 'fn-') === 0
+                && strpos($t->defining_class, 'fn-') === 0
             ) {
                 $implementer_method_storage_param_type->removeType($k);
 
@@ -731,7 +715,7 @@ class MethodComparator
 
         foreach ($guide_method_storage_param_type->getAtomicTypes() as $k => $t) {
             if ($t instanceof Type\Atomic\TTemplateParam
-                && \strpos($t->defining_class, 'fn-') === 0
+                && strpos($t->defining_class, 'fn-') === 0
             ) {
                 $guide_method_storage_param_type->removeType($k);
 
@@ -763,7 +747,7 @@ class MethodComparator
             // is the declared return type more specific than the inferred one?
             if ($union_comparison_results->type_coerced) {
                 if ($guide_classlike_storage->user_defined) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new MoreSpecificImplementedParamType(
                             'Argument ' . ($i + 1) . ' of ' . $cased_implementer_method_id
                                 . ' has the more specific type \'' .
@@ -774,9 +758,7 @@ class MethodComparator
                                 ?: $code_location
                         ),
                         $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             } else {
                 if (UnionTypeComparator::isContainedBy(
@@ -835,8 +817,8 @@ class MethodComparator
         string $cased_implementer_method_id,
         CodeLocation $code_location,
         array $suppressed_issues
-    ) : void {
-        $guide_signature_return_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+    ): void {
+        $guide_signature_return_type = TypeExpander::expandUnion(
             $codebase,
             $guide_signature_return_type,
             $guide_classlike_storage->is_trait && $guide_method_storage->abstract
@@ -855,7 +837,7 @@ class MethodComparator
         );
 
         $implementer_signature_return_type = $implementer_method_storage->signature_return_type
-            ? \Psalm\Internal\Type\TypeExpander::expandUnion(
+            ? TypeExpander::expandUnion(
                 $codebase,
                 $implementer_method_storage->signature_return_type,
                 $implementer_classlike_storage->is_trait
@@ -886,7 +868,7 @@ class MethodComparator
                 || (!$implementer_method_storage->abstract
                     && !$guide_method_storage->abstract)
             ) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new MethodSignatureMismatch(
                         'Method ' . $cased_implementer_method_id . ' with return type \''
                             . $implementer_signature_return_type . '\' is different to return type \''
@@ -894,11 +876,9 @@ class MethodComparator
                         $code_location
                     ),
                     $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new TraitMethodSignatureMismatch(
                         'Method ' . $cased_implementer_method_id . ' with return type \''
                             . $implementer_signature_return_type . '\' is different to return type \''
@@ -906,9 +886,7 @@ class MethodComparator
                         $code_location
                     ),
                     $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             }
         }
     }
@@ -928,8 +906,8 @@ class MethodComparator
         ?MethodIdentifier $implementer_declaring_method_id,
         CodeLocation $code_location,
         array $suppressed_issues
-    ) : void {
-        $implementer_method_storage_return_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+    ): void {
+        $implementer_method_storage_return_type = TypeExpander::expandUnion(
             $codebase,
             $implementer_return_type,
             $implementer_classlike_storage->is_trait
@@ -939,7 +917,7 @@ class MethodComparator
             $implementer_classlike_storage->parent_class
         );
 
-        $guide_method_storage_return_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+        $guide_method_storage_return_type = TypeExpander::expandUnion(
             $codebase,
             $guide_return_type,
             $guide_classlike_storage->is_trait
@@ -964,6 +942,15 @@ class MethodComparator
                 $guide_method_storage_return_type,
                 $codebase
             );
+
+            if ($implementer_method_storage->defining_fqcln) {
+                self::transformTemplates(
+                    $implementer_classlike_storage->template_extended_params,
+                    $implementer_method_storage->defining_fqcln,
+                    $implementer_method_storage_return_type,
+                    $codebase
+                );
+            }
         }
 
         if ($implementer_classlike_storage->is_trait) {
@@ -971,9 +958,7 @@ class MethodComparator
                 $implementer_called_class_name
             );
 
-            if (isset(
-                $implementer_called_class_storage->template_extended_params[$implementer_classlike_storage->name]
-            )) {
+            if ($implementer_called_class_storage->template_extended_params) {
                 self::transformTemplates(
                     $implementer_called_class_storage->template_extended_params,
                     $implementer_classlike_storage->name,
@@ -1011,7 +996,7 @@ class MethodComparator
         )) {
             // is the declared return type more specific than the inferred one?
             if ($union_comparison_results->type_coerced) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new LessSpecificImplementedReturnType(
                         'The inherited return type \'' . $guide_method_storage_return_type->getId()
                             . '\' for ' . $cased_guide_method_id . ' is more specific than the implemented '
@@ -1021,11 +1006,9 @@ class MethodComparator
                             ?: $code_location
                     ),
                     $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             } else {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new ImplementedReturnTypeMismatch(
                         'The inherited return type \'' . $guide_method_storage_return_type->getId()
                             . '\' for ' . $cased_guide_method_id . ' is different to the implemented '
@@ -1035,9 +1018,7 @@ class MethodComparator
                             ?: $code_location
                     ),
                     $suppressed_issues + $implementer_classlike_storage->suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             }
         }
     }
@@ -1050,7 +1031,7 @@ class MethodComparator
         string $base_class_name,
         Type\Union $templated_type,
         Codebase $codebase
-    ) : void {
+    ): void {
         if (isset($template_extended_params[$base_class_name])) {
             $map = $template_extended_params[$base_class_name];
 
@@ -1083,7 +1064,7 @@ class MethodComparator
                 $template_types[$key][$base_class_name] = $mapped_type;
             }
 
-            $template_result = new \Psalm\Internal\Type\TemplateResult([], $template_types);
+            $template_result = new TemplateResult([], $template_types);
 
             TemplateInferredTypeReplacer::replace(
                 $templated_type,

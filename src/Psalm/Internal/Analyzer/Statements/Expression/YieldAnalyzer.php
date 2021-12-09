@@ -12,6 +12,7 @@ use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Internal\FileManipulation\FileManipulationBuffer;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\InvalidDocblock;
 use Psalm\Issue\UnnecessaryVarAnnotation;
 use Psalm\IssueBuffer;
@@ -23,7 +24,7 @@ class YieldAnalyzer
         StatementsAnalyzer $statements_analyzer,
         PhpParser\Node\Expr\Yield_ $stmt,
         Context $context
-    ) : bool {
+    ): bool {
         $doc_comment = $stmt->getDocComment();
 
         $var_comments = [];
@@ -39,14 +40,12 @@ class YieldAnalyzer
                     $statements_analyzer->getAliases()
                 );
             } catch (DocblockParseException $e) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InvalidDocblock(
                         $e->getMessage(),
                         new CodeLocation($statements_analyzer->getSource(), $stmt)
                     )
-                )) {
-                    // fall through
-                }
+                );
             }
 
             foreach ($var_comments as $var_comment) {
@@ -54,7 +53,7 @@ class YieldAnalyzer
                     continue;
                 }
 
-                $comment_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $comment_type = TypeExpander::expandUnion(
                     $codebase,
                     $var_comment->type,
                     $context->self,

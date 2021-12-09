@@ -17,9 +17,12 @@ use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Internal\Codebase\TaintFlowGraph;
 use Psalm\Internal\Codebase\VariableUseGraph;
 use Psalm\Internal\DataFlow\DataFlowNode;
+use Psalm\Internal\MethodIdentifier;
+use Psalm\Internal\Type\Comparator\TypeComparisonResult;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Internal\Type\TemplateInferredTypeReplacer;
 use Psalm\Internal\Type\TemplateResult;
+use Psalm\Internal\Type\TypeExpander;
 use Psalm\Issue\FalsableReturnStatement;
 use Psalm\Issue\InvalidDocblock;
 use Psalm\Issue\InvalidReturnStatement;
@@ -29,10 +32,13 @@ use Psalm\Issue\MixedReturnTypeCoercion;
 use Psalm\Issue\NoValue;
 use Psalm\Issue\NullableReturnStatement;
 use Psalm\IssueBuffer;
+use Psalm\Storage\FunctionLikeStorage;
+use Psalm\Storage\MethodStorage;
 use Psalm\Type;
 
 use function array_merge;
 use function count;
+use function current;
 use function explode;
 use function reset;
 use function strtolower;
@@ -71,14 +77,12 @@ class ReturnAnalyzer
                     $file_storage->type_aliases
                 );
             } catch (DocblockParseException $e) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InvalidDocblock(
                         $e->getMessage(),
                         new CodeLocation($source, $stmt)
                     )
-                )) {
-                    // fall through
-                }
+                );
             }
 
             foreach ($var_comments as $var_comment) {
@@ -86,7 +90,7 @@ class ReturnAnalyzer
                     continue;
                 }
 
-                $comment_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $comment_type = TypeExpander::expandUnion(
                     $codebase,
                     $var_comment->type,
                     $context->self,
@@ -160,15 +164,13 @@ class ReturnAnalyzer
                 $stmt_type = $stmt_expr_type;
 
                 if ($stmt_type->isNever()) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new NoValue(
                             'This function or method call never returns output',
                             new CodeLocation($source, $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
 
                     $stmt_type = Type::getEmpty();
                 }
@@ -215,7 +217,7 @@ class ReturnAnalyzer
             $cased_method_id = $source->getCorrectlyCasedMethodId();
 
             if ($stmt->expr && $storage->location) {
-                $inferred_type = \Psalm\Internal\Type\TypeExpander::expandUnion(
+                $inferred_type = TypeExpander::expandUnion(
                     $codebase,
                     $stmt_type,
                     $source->getFQCLN(),
@@ -233,11 +235,11 @@ class ReturnAnalyzer
                     );
                 }
 
-                if ($storage instanceof \Psalm\Storage\MethodStorage && $context->self) {
+                if ($storage instanceof MethodStorage && $context->self) {
                     $self_class = $context->self;
 
                     $declared_return_type = $codebase->methods->getMethodReturnType(
-                        \Psalm\Internal\MethodIdentifier::wrap($cased_method_id),
+                        MethodIdentifier::wrap($cased_method_id),
                         $self_class,
                         $statements_analyzer,
                         null
@@ -249,10 +251,10 @@ class ReturnAnalyzer
                 if ($declared_return_type && !$declared_return_type->hasMixed()) {
                     $local_return_type = $source->getLocalReturnType(
                         $declared_return_type,
-                        $storage instanceof \Psalm\Storage\MethodStorage && $storage->final
+                        $storage instanceof MethodStorage && $storage->final
                     );
 
-                    if ($storage instanceof \Psalm\Storage\MethodStorage) {
+                    if ($storage instanceof MethodStorage) {
                         [$fq_class_name, $method_name] = explode('::', $cased_method_id);
 
                         $class_storage = $codebase->classlike_storage_provider->get($fq_class_name);
@@ -326,29 +328,25 @@ class ReturnAnalyzer
                                 $origin_location = null;
                             }
 
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new MixedReturnStatement(
                                     'Could not infer a return type',
                                     $return_location,
                                     $origin_location
                                 ),
                                 $statements_analyzer->getSuppressedIssues()
-                            )) {
-                                // fall through
-                            }
+                            );
 
                             return;
                         }
 
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new MixedReturnStatement(
                                 'Possibly-mixed return value',
                                 new CodeLocation($source, $stmt->expr)
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
 
                     if ($local_return_type->isMixed()) {
@@ -377,7 +375,7 @@ class ReturnAnalyzer
                         return;
                     }
 
-                    $union_comparison_results = new \Psalm\Internal\Type\Comparator\TypeComparisonResult();
+                    $union_comparison_results = new TypeComparisonResult();
 
                     if (!UnionTypeComparator::isContainedBy(
                         $codebase,
@@ -393,17 +391,15 @@ class ReturnAnalyzer
                             if ($union_comparison_results->type_coerced_from_mixed) {
                                 if (!$union_comparison_results->type_coerced_from_as_mixed) {
                                     if ($inferred_type->hasMixed()) {
-                                        if (IssueBuffer::accepts(
+                                        IssueBuffer::maybeAdd(
                                             new MixedReturnStatement(
                                                 'Could not infer a return type',
                                                 new CodeLocation($source, $stmt->expr)
                                             ),
                                             $statements_analyzer->getSuppressedIssues()
-                                        )) {
-                                            // fall through
-                                        }
+                                        );
                                     } else {
-                                        if (IssueBuffer::accepts(
+                                        IssueBuffer::maybeAdd(
                                             new MixedReturnTypeCoercion(
                                                 'The type \'' . $stmt_type->getId() . '\' is more general than the'
                                                     . ' declared return type \'' . $local_return_type->getId() . '\''
@@ -411,13 +407,11 @@ class ReturnAnalyzer
                                                 new CodeLocation($source, $stmt->expr)
                                             ),
                                             $statements_analyzer->getSuppressedIssues()
-                                        )) {
-                                            // fall through
-                                        }
+                                        );
                                     }
                                 }
                             } else {
-                                if (IssueBuffer::accepts(
+                                IssueBuffer::maybeAdd(
                                     new LessSpecificReturnStatement(
                                         'The type \'' . $stmt_type->getId() . '\' is more general than the'
                                             . ' declared return type \'' . $local_return_type->getId() . '\''
@@ -425,9 +419,7 @@ class ReturnAnalyzer
                                         new CodeLocation($source, $stmt->expr)
                                     ),
                                     $statements_analyzer->getSuppressedIssues()
-                                )) {
-                                    // fall through
-                                }
+                                );
                             }
 
                             foreach ($local_return_type->getAtomicTypes() as $local_type_part) {
@@ -474,7 +466,7 @@ class ReturnAnalyzer
                                 }
                             }
                         } else {
-                            if (IssueBuffer::accepts(
+                            IssueBuffer::maybeAdd(
                                 new InvalidReturnStatement(
                                     'The inferred type \'' . $inferred_type->getId()
                                         . '\' does not match the declared return '
@@ -482,9 +474,7 @@ class ReturnAnalyzer
                                     new CodeLocation($source, $stmt->expr)
                                 ),
                                 $statements_analyzer->getSuppressedIssues()
-                            )) {
-                                // fall through
-                            }
+                            );
                         }
                     }
 
@@ -493,7 +483,7 @@ class ReturnAnalyzer
                         && !$local_return_type->isNullable()
                         && !$local_return_type->hasTemplate()
                     ) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new NullableReturnStatement(
                                 'The declared return type \'' . $local_return_type->getId() . '\' for '
                                     . $cased_method_id . ' is not nullable, but the function returns \''
@@ -501,9 +491,7 @@ class ReturnAnalyzer
                                 new CodeLocation($source, $stmt->expr)
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            //fall through
-                        }
+                        );
                     }
 
                     if (!$stmt_type->ignore_falsable_issues
@@ -512,7 +500,7 @@ class ReturnAnalyzer
                         && (!$local_return_type->hasBool() || $local_return_type->isTrue())
                         && !$local_return_type->hasScalar()
                     ) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new FalsableReturnStatement(
                                 'The declared return type \'' . $local_return_type . '\' for '
                                     . $cased_method_id . ' does not allow false, but the function returns \''
@@ -520,9 +508,7 @@ class ReturnAnalyzer
                                 new CodeLocation($source, $stmt->expr)
                             ),
                             $statements_analyzer->getSuppressedIssues()
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 }
             } else {
@@ -530,15 +516,13 @@ class ReturnAnalyzer
                     && !$storage->signature_return_type->isVoid()
                     && !$storage->has_yield
                 ) {
-                    if (IssueBuffer::accepts(
+                    IssueBuffer::maybeAdd(
                         new InvalidReturnStatement(
                             'Empty return statement is not expected in ' . $cased_method_id,
                             new CodeLocation($source, $stmt)
                         ),
                         $statements_analyzer->getSuppressedIssues()
-                    )) {
-                        // fall through
-                    }
+                    );
                 }
             }
         }
@@ -549,8 +533,8 @@ class ReturnAnalyzer
         PhpParser\Node\Stmt\Return_ $stmt,
         string $cased_method_id,
         Type\Union $inferred_type,
-        \Psalm\Storage\FunctionLikeStorage $storage
-    ) : void {
+        FunctionLikeStorage $storage
+    ): void {
         if (!$statements_analyzer->data_flow_graph instanceof TaintFlowGraph
             || !$stmt->expr
             || !$storage->location
@@ -622,7 +606,7 @@ class ReturnAnalyzer
         }
 
         /** @var Type\Atomic\TClosure|Type\Atomic\TCallable $parent_callable_return_type */
-        $parent_callable_return_type = \current($parent_fn_storage->return_type->getAtomicTypes());
+        $parent_callable_return_type = current($parent_fn_storage->return_type->getAtomicTypes());
 
         if ($parent_callable_return_type->params === null && $parent_callable_return_type->return_type === null) {
             return;

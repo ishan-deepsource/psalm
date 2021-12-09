@@ -5,6 +5,7 @@ use PhpParser\Node\Stmt\Class_;
 use Psalm\DocComment;
 use Psalm\FileManipulation;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
+use Psalm\Internal\Scanner\ParsedDocblock;
 
 use function ltrim;
 use function str_replace;
@@ -41,7 +42,7 @@ class ClassDocblockManipulator
         ProjectAnalyzer $project_analyzer,
         string $file_path,
         Class_ $stmt
-    ) : self {
+    ): self {
         if (isset(self::$manipulators[$file_path][$stmt->getLine()])) {
             return self::$manipulators[$file_path][$stmt->getLine()];
         }
@@ -74,7 +75,7 @@ class ClassDocblockManipulator
         $this->indentation = str_replace(ltrim($first_line), '', $first_line);
     }
 
-    public function makeImmutable() : void
+    public function makeImmutable(): void
     {
         $this->immutable = true;
     }
@@ -91,7 +92,7 @@ class ClassDocblockManipulator
         if ($docblock) {
             $parsed_docblock = DocComment::parsePreservingLength($docblock);
         } else {
-            $parsed_docblock = new \Psalm\Internal\Scanner\ParsedDocblock('', []);
+            $parsed_docblock = new ParsedDocblock('', []);
         }
 
         $modified_docblock = false;

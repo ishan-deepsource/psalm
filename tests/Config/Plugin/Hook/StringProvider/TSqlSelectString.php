@@ -1,12 +1,14 @@
 <?php
 namespace Psalm\Test\Config\Plugin\Hook\StringProvider;
 
+use Psalm\Type\Atomic\TLiteralString;
+
 /**
  * Special type, specifically for consumption by plugins.
  */
-class TSqlSelectString extends \Psalm\Type\Atomic\TLiteralString
+class TSqlSelectString extends TLiteralString
 {
-    public function getKey(bool $include_extra = true) : string
+    public function getKey(bool $include_extra = true): string
     {
         return 'sql-select-string';
     }

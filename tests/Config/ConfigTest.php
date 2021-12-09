@@ -1,15 +1,22 @@
 <?php
 namespace Psalm\Tests\Config;
 
+use Composer\Autoload\ClassLoader;
+use ErrorException;
 use Psalm\Config;
+use Psalm\Config\IssueHandler;
 use Psalm\Context;
+use Psalm\Exception\CodeException;
 use Psalm\Exception\ConfigException;
 use Psalm\Internal\Analyzer\FileAnalyzer;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\Provider\FakeFileProvider;
+use Psalm\Internal\Provider\Providers;
 use Psalm\Internal\RuntimeCaches;
 use Psalm\Internal\Scanner\FileScanner;
 use Psalm\Tests\Config\Plugin\FileTypeSelfRegisteringPlugin;
-use Psalm\Tests\Internal\Provider;
+use Psalm\Tests\Internal\Provider\FakeParserCacheProvider;
+use Psalm\Tests\TestCase;
 use Psalm\Tests\TestConfig;
 
 use function array_map;
@@ -20,6 +27,7 @@ use function error_get_last;
 use function get_class;
 use function getcwd;
 use function implode;
+use function in_array;
 use function is_array;
 use function preg_match;
 use function realpath;
@@ -30,15 +38,15 @@ use function unlink;
 
 use const DIRECTORY_SEPARATOR;
 
-class ConfigTest extends \Psalm\Tests\TestCase
+class ConfigTest extends TestCase
 {
     /** @var TestConfig */
     protected static $config;
 
-    /** @var \Psalm\Internal\Analyzer\ProjectAnalyzer */
+    /** @var ProjectAnalyzer */
     protected $project_analyzer;
 
-    public static function setUpBeforeClass() : void
+    public static function setUpBeforeClass(): void
     {
         self::$config = new TestConfig();
 
@@ -51,23 +59,23 @@ class ConfigTest extends \Psalm\Tests\TestCase
         }
     }
 
-    public function setUp() : void
+    public function setUp(): void
     {
         RuntimeCaches::clearAll();
         $this->file_provider = new FakeFileProvider();
     }
 
-    private function getProjectAnalyzerWithConfig(Config $config): \Psalm\Internal\Analyzer\ProjectAnalyzer
+    private function getProjectAnalyzerWithConfig(Config $config): ProjectAnalyzer
     {
-        $p = new \Psalm\Internal\Analyzer\ProjectAnalyzer(
+        $p = new ProjectAnalyzer(
             $config,
-            new \Psalm\Internal\Provider\Providers(
+            new Providers(
                 $this->file_provider,
-                new Provider\FakeParserCacheProvider()
+                new FakeParserCacheProvider()
             )
         );
 
-        $p->setPhpVersion('7.3');
+        $p->setPhpVersion('7.3', 'tests');
 
         return $p;
     }
@@ -140,29 +148,27 @@ class ConfigTest extends \Psalm\Tests\TestCase
         $this->assertFalse($config->isInProjectDirs(realpath('examples/StringAnalyzer.php')));
     }
 
-    /**
-     * @return void
-     */
-    public function testIgnoreSymlinkedProjectDirectory()
+    public function testIgnoreSymlinkedProjectDirectory(): void
     {
         @unlink(dirname(__DIR__, 1) . '/fixtures/symlinktest/ignored/b');
 
-        $no_symlinking_error = 'symlink(): Cannot create symlink, error code(1314)';
+        $no_symlinking_error = [
+            'symlink(): Cannot create symlink, error code(1314)',
+            'symlink(): Permission denied',
+        ];
         $last_error = error_get_last();
         $check_symlink_error =
             !is_array($last_error) ||
             !isset($last_error['message']) ||
-            $no_symlinking_error !== $last_error['message'];
+            !in_array($last_error['message'], $no_symlinking_error);
 
         @symlink(dirname(__DIR__, 1) . '/fixtures/symlinktest/a', dirname(__DIR__, 1) . '/fixtures/symlinktest/ignored/b');
 
         if ($check_symlink_error) {
             $last_error = error_get_last();
 
-            if (is_array($last_error) && $no_symlinking_error === $last_error['message']) {
-                $this->markTestSkipped($no_symlinking_error);
-
-                return;
+            if (is_array($last_error) && in_array($last_error['message'], $no_symlinking_error)) {
+                $this->markTestSkipped($last_error['message']);
             }
         }
 
@@ -200,7 +206,7 @@ class ConfigTest extends \Psalm\Tests\TestCase
             $last_error = error_get_last();
 
             if (is_array($last_error) && !preg_match($regex, $last_error['message'])) {
-                throw new \ErrorException(
+                throw new ErrorException(
                     $last_error['message'],
                     0,
                     $last_error['type'],
@@ -788,7 +794,7 @@ class ConfigTest extends \Psalm\Tests\TestCase
                 function ($issue_name): string {
                     return '<' . $issue_name . ' errorLevel="suppress" />' . "\n";
                 },
-                \Psalm\Config\IssueHandler::getAllIssueTypes()
+                IssueHandler::getAllIssueTypes()
             )
         );
 
@@ -929,206 +935,10 @@ class ConfigTest extends \Psalm\Tests\TestCase
         $this->analyzeFile($file_path, new Context());
     }
 
-    public function testAllowedEchoFunction(): void
-    {
-        $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
-            TestConfig::loadFromXML(
-                dirname(__DIR__, 2),
-                '<?xml version="1.0"?>
-                <psalm></psalm>'
-            )
-        );
-
-        $file_path = getcwd() . '/src/somefile.php';
-
-        $this->addFile(
-            $file_path,
-            '<?php
-                echo "hello";'
-        );
-
-        $this->analyzeFile($file_path, new Context());
-    }
-
-    public function testForbiddenEchoFunctionViaFunctions(): void
-    {
-        $this->expectExceptionMessage('ForbiddenCode');
-        $this->expectException(\Psalm\Exception\CodeException::class);
-        $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
-            TestConfig::loadFromXML(
-                dirname(__DIR__, 2),
-                '<?xml version="1.0"?>
-                <psalm>
-                    <forbiddenFunctions>
-                        <function name="echo" />
-                    </forbiddenFunctions>
-                </psalm>'
-            )
-        );
-
-        $file_path = getcwd() . '/src/somefile.php';
-
-        $this->addFile(
-            $file_path,
-            '<?php
-                echo "hello";'
-        );
-
-        $this->analyzeFile($file_path, new Context());
-    }
-
-    public function testForbiddenEchoFunctionViaFlag(): void
-    {
-        $this->expectExceptionMessage('ForbiddenEcho');
-        $this->expectException(\Psalm\Exception\CodeException::class);
-        $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
-            TestConfig::loadFromXML(
-                dirname(__DIR__, 2),
-                '<?xml version="1.0"?>
-                <psalm forbidEcho="true"></psalm>'
-            )
-        );
-
-        $file_path = getcwd() . '/src/somefile.php';
-
-        $this->addFile(
-            $file_path,
-            '<?php
-                echo "hello";'
-        );
-
-        $this->analyzeFile($file_path, new Context());
-    }
-
-    public function testAllowedPrintFunction(): void
-    {
-        $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
-            TestConfig::loadFromXML(
-                dirname(__DIR__, 2),
-                '<?xml version="1.0"?>
-                <psalm></psalm>'
-            )
-        );
-
-        $file_path = getcwd() . '/src/somefile.php';
-
-        $this->addFile(
-            $file_path,
-            '<?php
-                print "hello";'
-        );
-
-        $this->analyzeFile($file_path, new Context());
-    }
-
-    public function testForbiddenPrintFunction(): void
-    {
-        $this->expectExceptionMessage('ForbiddenCode');
-        $this->expectException(\Psalm\Exception\CodeException::class);
-        $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
-            TestConfig::loadFromXML(
-                dirname(__DIR__, 2),
-                '<?xml version="1.0"?>
-                <psalm>
-                    <forbiddenFunctions>
-                        <function name="print" />
-                    </forbiddenFunctions>
-                </psalm>'
-            )
-        );
-
-        $file_path = getcwd() . '/src/somefile.php';
-
-        $this->addFile(
-            $file_path,
-            '<?php
-                print "hello";'
-        );
-
-        $this->analyzeFile($file_path, new Context());
-    }
-
-    public function testAllowedVarExportFunction(): void
-    {
-        $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
-            TestConfig::loadFromXML(
-                dirname(__DIR__, 2),
-                '<?xml version="1.0"?>
-                <psalm></psalm>'
-            )
-        );
-
-        $file_path = getcwd() . '/src/somefile.php';
-
-        $this->addFile(
-            $file_path,
-            '<?php
-                $a = [1, 2, 3];
-                var_export($a);'
-        );
-
-        $this->analyzeFile($file_path, new Context());
-    }
-
-    public function testForbiddenVarExportFunction(): void
-    {
-        $this->expectExceptionMessage('ForbiddenCode');
-        $this->expectException(\Psalm\Exception\CodeException::class);
-        $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
-            TestConfig::loadFromXML(
-                dirname(__DIR__, 2),
-                '<?xml version="1.0"?>
-                <psalm>
-                    <forbiddenFunctions>
-                        <function name="var_export" />
-                    </forbiddenFunctions>
-                </psalm>'
-            )
-        );
-
-        $file_path = getcwd() . '/src/somefile.php';
-
-        $this->addFile(
-            $file_path,
-            '<?php
-                $a = [1, 2, 3];
-                var_export($a);'
-        );
-
-        $this->analyzeFile($file_path, new Context());
-    }
-
-    public function testForbiddenEmptyFunction(): void
-    {
-        $this->expectExceptionMessage('ForbiddenCode');
-        $this->expectException(\Psalm\Exception\CodeException::class);
-        $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
-            TestConfig::loadFromXML(
-                dirname(__DIR__, 2),
-                '<?xml version="1.0"?>
-                <psalm>
-                    <forbiddenFunctions>
-                        <function name="empty" />
-                    </forbiddenFunctions>
-                </psalm>'
-            )
-        );
-
-        $file_path = getcwd() . '/src/somefile.php';
-
-        $this->addFile(
-            $file_path,
-            '<?php
-                empty(false);'
-        );
-
-        $this->analyzeFile($file_path, new Context());
-    }
-
     public function testValidThrowInvalidCatch(): void
     {
         $this->expectExceptionMessage('InvalidCatch');
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
             TestConfig::loadFromXML(
                 dirname(__DIR__, 2),
@@ -1176,7 +986,7 @@ class ConfigTest extends \Psalm\Tests\TestCase
     public function testInvalidThrowValidCatch(): void
     {
         $this->expectExceptionMessage('InvalidThrow');
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
             TestConfig::loadFromXML(
                 dirname(__DIR__, 2),
@@ -1456,9 +1266,9 @@ class ConfigTest extends \Psalm\Tests\TestCase
         $this->analyzeFile($file_path, new Context());
     }
 
-    public function testNotIgnoredException() : void
+    public function testNotIgnoredException(): void
     {
-        $this->expectException(\Psalm\Exception\CodeException::class);
+        $this->expectException(CodeException::class);
         $this->expectExceptionMessage('MissingThrowsDocblock');
 
         $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
@@ -1508,7 +1318,7 @@ class ConfigTest extends \Psalm\Tests\TestCase
 
         $config = $this->project_analyzer->getConfig();
 
-        $classloader = new \Composer\Autoload\ClassLoader();
+        $classloader = new ClassLoader();
         $classloader->addPsr4(
             'Psalm\\',
             [
@@ -1576,8 +1386,7 @@ class ConfigTest extends \Psalm\Tests\TestCase
         $this->assertFalse($this->project_analyzer->getConfig()->use_phpstorm_meta_path);
     }
 
-    /** @return void */
-    public function testSetsUniversalObjectCrates()
+    public function testSetsUniversalObjectCrates(): void
     {
         $this->project_analyzer = $this->getProjectAnalyzerWithConfig(
             TestConfig::loadFromXML(

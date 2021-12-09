@@ -2,12 +2,21 @@
 namespace Psalm\Tests;
 
 use Psalm\Config;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\IncludeCollector;
 use Psalm\Internal\Provider\FakeFileProvider;
+use Psalm\Internal\Provider\Providers;
 use Psalm\Internal\RuntimeCaches;
+use Psalm\IssueBuffer;
 use Psalm\Plugin\EventHandler\AfterCodebasePopulatedInterface;
 use Psalm\Plugin\EventHandler\Event\AfterCodebasePopulatedEvent;
-use Psalm\Tests\Internal\Provider;
+use Psalm\Report;
+use Psalm\Report\ReportOptions;
+use Psalm\Tests\Internal\Provider\ClassLikeStorageInstanceCacheProvider;
+use Psalm\Tests\Internal\Provider\FakeFileReferenceCacheProvider;
+use Psalm\Tests\Internal\Provider\FileStorageInstanceCacheProvider;
+use Psalm\Tests\Internal\Provider\ParserInstanceCacheProvider;
+use Psalm\Tests\Internal\Provider\ProjectCacheProvider;
 use Psalm\Tests\Progress\EchoProgress;
 
 use function define;
@@ -27,10 +36,10 @@ class ProjectCheckerTest extends TestCase
     /** @var TestConfig */
     protected static $config;
 
-    /** @var \Psalm\Internal\Analyzer\ProjectAnalyzer */
+    /** @var ProjectAnalyzer */
     protected $project_analyzer;
 
-    public static function setUpBeforeClass() : void
+    public static function setUpBeforeClass(): void
     {
         self::$config = new TestConfig();
 
@@ -43,26 +52,26 @@ class ProjectCheckerTest extends TestCase
         }
     }
 
-    public function setUp() : void
+    public function setUp(): void
     {
         RuntimeCaches::clearAll();
         $this->file_provider = new FakeFileProvider();
     }
 
-    private function getProjectAnalyzerWithConfig(Config $config): \Psalm\Internal\Analyzer\ProjectAnalyzer
+    private function getProjectAnalyzerWithConfig(Config $config): ProjectAnalyzer
     {
         $config->setIncludeCollector(new IncludeCollector());
-        return new \Psalm\Internal\Analyzer\ProjectAnalyzer(
+        return new ProjectAnalyzer(
             $config,
-            new \Psalm\Internal\Provider\Providers(
+            new Providers(
                 $this->file_provider,
-                new Provider\ParserInstanceCacheProvider(),
-                new Provider\FileStorageInstanceCacheProvider(),
-                new Provider\ClassLikeStorageInstanceCacheProvider(),
-                new Provider\FakeFileReferenceCacheProvider(),
-                new Provider\ProjectCacheProvider()
+                new ParserInstanceCacheProvider(),
+                new FileStorageInstanceCacheProvider(),
+                new ClassLikeStorageInstanceCacheProvider(),
+                new FakeFileReferenceCacheProvider(),
+                new ProjectCacheProvider()
             ),
-            new \Psalm\Report\ReportOptions()
+            new ReportOptions()
         );
     }
 
@@ -79,6 +88,7 @@ class ProjectCheckerTest extends TestCase
                 </psalm>'
             )
         );
+        $this->project_analyzer->setPhpVersion('8.1', 'tests');
 
         $this->project_analyzer->progress = new EchoProgress();
 
@@ -86,9 +96,15 @@ class ProjectCheckerTest extends TestCase
         $this->project_analyzer->check('tests/fixtures/DummyProject');
         $output = ob_get_clean();
 
-        $this->assertSame('Scanning files...' . "\n" . 'Analyzing files...' . "\n\n", $output);
+        $this->assertSame(
+            'Target PHP version: 8.1 (set by tests)' . "\n"
+            . 'Scanning files...' . "\n"
+            . 'Analyzing files...' . "\n"
+            . "\n",
+            $output
+        );
 
-        $this->assertSame(0, \Psalm\IssueBuffer::getErrorCount());
+        $this->assertSame(0, IssueBuffer::getErrorCount());
 
         $codebase = $this->project_analyzer->getCodebase();
 
@@ -108,7 +124,10 @@ class ProjectCheckerTest extends TestCase
             /** @var bool */
             public static $called = false;
 
-            /** @return void */
+            /**
+             * @return void
+             * @phpcsSuppress SlevomatCodingStandard.TypeHints.ReturnTypeHint
+             */
             public static function afterCodebasePopulated(AfterCodebasePopulatedEvent $event)
             {
                 self::$called = true;
@@ -154,11 +173,11 @@ class ProjectCheckerTest extends TestCase
 
         $this->assertNotNull($this->project_analyzer->stdout_report_options);
 
-        $this->project_analyzer->stdout_report_options->format = \Psalm\Report::TYPE_JSON;
+        $this->project_analyzer->stdout_report_options->format = Report::TYPE_JSON;
 
         $this->project_analyzer->check('tests/fixtures/DummyProject', true);
         ob_start();
-        \Psalm\IssueBuffer::finish($this->project_analyzer, true, microtime(true));
+        IssueBuffer::finish($this->project_analyzer, true, microtime(true));
         ob_end_clean();
 
         $this->assertSame(
@@ -172,7 +191,7 @@ class ProjectCheckerTest extends TestCase
 
         $this->project_analyzer->check('tests/fixtures/DummyProject', true);
 
-        $this->assertSame(0, \Psalm\IssueBuffer::getErrorCount());
+        $this->assertSame(0, IssueBuffer::getErrorCount());
 
         $this->assertSame(
             'Psalm was able to infer types for 100% of the codebase',
@@ -198,11 +217,11 @@ class ProjectCheckerTest extends TestCase
 
         $this->assertNotNull($this->project_analyzer->stdout_report_options);
 
-        $this->project_analyzer->stdout_report_options->format = \Psalm\Report::TYPE_JSON;
+        $this->project_analyzer->stdout_report_options->format = Report::TYPE_JSON;
 
         $this->project_analyzer->check('tests/fixtures/DummyProject', true);
         ob_start();
-        \Psalm\IssueBuffer::finish($this->project_analyzer, true, microtime(true));
+        IssueBuffer::finish($this->project_analyzer, true, microtime(true));
         ob_end_clean();
 
         $this->assertSame(
@@ -237,7 +256,7 @@ class Bat
 
         $this->project_analyzer->check('tests/fixtures/DummyProject', true);
 
-        $this->assertSame(0, \Psalm\IssueBuffer::getErrorCount());
+        $this->assertSame(0, IssueBuffer::getErrorCount());
 
         $this->assertSame(
             'Psalm was able to infer types for 100% of the codebase',
@@ -261,15 +280,23 @@ class Bat
             )
         );
 
+        $this->project_analyzer->setPhpVersion('8.1', 'tests');
+
         $this->project_analyzer->progress = new EchoProgress();
 
         ob_start();
         $this->project_analyzer->checkDir('tests/fixtures/DummyProject');
         $output = ob_get_clean();
 
-        $this->assertSame('Scanning files...' . "\n" . 'Analyzing files...' . "\n\n", $output);
+        $this->assertSame(
+            'Target PHP version: 8.1 (set by tests)' . "\n"
+            . 'Scanning files...' . "\n"
+            . 'Analyzing files...' . "\n"
+            . "\n",
+            $output
+        );
 
-        $this->assertSame(0, \Psalm\IssueBuffer::getErrorCount());
+        $this->assertSame(0, IssueBuffer::getErrorCount());
 
         $this->assertSame(
             'Psalm was able to infer types for 100% of the codebase',
@@ -293,6 +320,8 @@ class Bat
             )
         );
 
+        $this->project_analyzer->setPhpVersion('8.1', 'tests');
+
         $this->project_analyzer->progress = new EchoProgress();
 
         ob_start();
@@ -304,9 +333,15 @@ class Bat
         ]);
         $output = ob_get_clean();
 
-        $this->assertSame('Scanning files...' . "\n" . 'Analyzing files...' . "\n\n", $output);
+        $this->assertSame(
+            'Target PHP version: 8.1 (set by tests)' . "\n"
+            . 'Scanning files...' . "\n"
+            . 'Analyzing files...' . "\n"
+            . "\n",
+            $output
+        );
 
-        $this->assertSame(0, \Psalm\IssueBuffer::getErrorCount());
+        $this->assertSame(0, IssueBuffer::getErrorCount());
 
         $this->assertSame(
             'Psalm was able to infer types for 100% of the codebase',
@@ -330,6 +365,8 @@ class Bat
             )
         );
 
+        $this->project_analyzer->setPhpVersion('8.1', 'tests');
+
         $this->project_analyzer->progress = new EchoProgress();
 
         ob_start();
@@ -341,9 +378,15 @@ class Bat
         ]);
         $output = ob_get_clean();
 
-        $this->assertSame('Scanning files...' . "\n" . 'Analyzing files...' . "\n\n", $output);
+        $this->assertSame(
+            'Target PHP version: 8.1 (set by tests)' . "\n"
+            . 'Scanning files...' . "\n"
+            . 'Analyzing files...' . "\n"
+            . "\n",
+            $output
+        );
 
-        $this->assertSame(0, \Psalm\IssueBuffer::getErrorCount());
+        $this->assertSame(0, IssueBuffer::getErrorCount());
 
         $this->assertSame(
             'Psalm was able to infer types for 100% of the codebase',

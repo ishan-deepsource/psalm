@@ -2,25 +2,31 @@
 namespace Psalm\Internal\Provider\ReturnTypeProvider;
 
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ArrayFetchAnalyzer;
+use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Plugin\EventHandler\Event\FunctionReturnTypeProviderEvent;
+use Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface;
 use Psalm\Type;
+use UnexpectedValueException;
 
-class ArrayPointerAdjustmentReturnTypeProvider implements \Psalm\Plugin\EventHandler\FunctionReturnTypeProviderInterface
+use function array_merge;
+use function array_shift;
+
+class ArrayPointerAdjustmentReturnTypeProvider implements FunctionReturnTypeProviderInterface
 {
     /**
      * @return array<lowercase-string>
      */
-    public static function getFunctionIds() : array
+    public static function getFunctionIds(): array
     {
         return ['current', 'next', 'prev', 'reset', 'end'];
     }
 
-    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event) : Type\Union
+    public static function getFunctionReturnType(FunctionReturnTypeProviderEvent $event): Type\Union
     {
         $statements_source = $event->getStatementsSource();
         $call_args = $event->getCallArgs();
         $function_id = $event->getFunctionId();
-        if (!$statements_source instanceof \Psalm\Internal\Analyzer\StatementsAnalyzer) {
+        if (!$statements_source instanceof StatementsAnalyzer) {
             return Type::getMixed();
         }
 
@@ -41,9 +47,9 @@ class ArrayPointerAdjustmentReturnTypeProvider implements \Psalm\Plugin\EventHan
         $value_type = null;
         $definitely_has_items = false;
 
-        while ($atomic_type = \array_shift($atomic_types)) {
+        while ($atomic_type = array_shift($atomic_types)) {
             if ($atomic_type instanceof Type\Atomic\TTemplateParam) {
-                $atomic_types = \array_merge($atomic_types, $atomic_type->as->getAtomicTypes());
+                $atomic_types = array_merge($atomic_types, $atomic_type->as->getAtomicTypes());
                 continue;
             }
 
@@ -62,7 +68,7 @@ class ArrayPointerAdjustmentReturnTypeProvider implements \Psalm\Plugin\EventHan
         }
 
         if (!$value_type) {
-            throw new \UnexpectedValueException('This should never happen');
+            throw new UnexpectedValueException('This should never happen');
         }
 
         if ($value_type->isEmpty()) {

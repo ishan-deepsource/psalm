@@ -1,12 +1,15 @@
 <?php
 namespace Psalm\Internal\Type;
 
+use Exception;
 use Psalm\CodeLocation;
 use Psalm\Codebase;
+use Psalm\Exception\TypeParseTreeException;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\VariableFetchAnalyzer;
 use Psalm\Internal\Analyzer\StatementsAnalyzer;
 use Psalm\Internal\Analyzer\TraitAnalyzer;
 use Psalm\Internal\Type\Comparator\AtomicTypeComparator;
+use Psalm\Internal\Type\Comparator\TypeComparisonResult;
 use Psalm\Internal\Type\Comparator\UnionTypeComparator;
 use Psalm\Issue\DocblockTypeContradiction;
 use Psalm\Issue\InvalidDocblock;
@@ -22,10 +25,12 @@ use Psalm\Type\Atomic\TMixed;
 use Psalm\Type\Atomic\TNamedObject;
 use Psalm\Type\Atomic\TString;
 use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Reconciler;
 use Psalm\Type\Union;
 
 use function array_intersect_key;
 use function array_merge;
+use function array_values;
 use function count;
 use function explode;
 use function get_class;
@@ -33,7 +38,7 @@ use function is_string;
 use function strpos;
 use function substr;
 
-class AssertionReconciler extends \Psalm\Type\Reconciler
+class AssertionReconciler extends Reconciler
 {
     /**
      * Reconciles types
@@ -57,16 +62,16 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
         array $template_type_map,
         ?CodeLocation $code_location = null,
         array $suppressed_issues = [],
-        ?int &$failed_reconciliation = 0,
+        ?int &$failed_reconciliation = Reconciler::RECONCILIATION_OK,
         bool $negated = false
-    ) : Union {
+    ): Union {
         $codebase = $statements_analyzer->getCodebase();
 
         $is_strict_equality = false;
         $is_loose_equality = false;
         $is_equality = false;
         $is_negation = false;
-        $failed_reconciliation = 0;
+        $failed_reconciliation = Reconciler::RECONCILIATION_OK;
 
         if ($assertion[0] === '!') {
             $assertion = substr($assertion, 1);
@@ -190,7 +195,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
 
             try {
                 $new_type = Type::parseString($assertion, null, $template_type_map);
-            } catch (\Psalm\Exception\TypeParseTreeException $e) {
+            } catch (TypeParseTreeException $e) {
                 $new_type = Type::getMixed();
             }
         }
@@ -243,7 +248,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
         bool $inside_loop,
         bool $is_equality,
         array $template_type_map
-    ) : Union {
+    ): Union {
         if (($assertion === 'isset' && !$is_negation)
             || ($assertion === 'empty' && $is_negation)
         ) {
@@ -269,7 +274,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
 
             try {
                 return Type::parseString($assertion, null, $template_type_map);
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 return Type::getMixed();
             }
         }
@@ -300,7 +305,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
         bool $is_loose_equality,
         array $suppressed_issues,
         int &$failed_reconciliation
-    ) : Union {
+    ): Union {
         $codebase = $statements_analyzer->getCodebase();
 
         $old_var_type_string = $existing_var_type->getId();
@@ -335,30 +340,28 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
             if (strpos($assertion, '<') || strpos($assertion, '[') || strpos($assertion, '{')) {
                 $new_type_union = Type::parseString($assertion);
 
-                $new_type_part = \array_values($new_type_union->getAtomicTypes())[0];
+                $new_type_part = array_values($new_type_union->getAtomicTypes())[0];
             } else {
                 $new_type_part = Atomic::create($assertion, null, $template_type_map);
             }
-        } catch (\Psalm\Exception\TypeParseTreeException $e) {
+        } catch (TypeParseTreeException $e) {
             $new_type_part = new TMixed();
 
             if ($code_location) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new InvalidDocblock(
                         $assertion . ' cannot be used in an assertion',
                         $code_location
                     ),
                     $suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
             }
         }
 
         if ($new_type_part instanceof Type\Atomic\TTemplateParam
             && $new_type_part->as->isSingle()
         ) {
-            $new_as_atomic = \array_values($new_type_part->as->getAtomicTypes())[0];
+            $new_as_atomic = array_values($new_type_part->as->getAtomicTypes())[0];
 
             $acceptable_atomic_types = [];
 
@@ -526,7 +529,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
             ) {
                 if ($assertion === 'null') {
                     if ($existing_var_type->from_docblock) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new DocblockTypeContradiction(
                                 'Cannot resolve types for ' . $key . ' - docblock-defined type '
                                     . $existing_var_type . ' does not contain null',
@@ -534,11 +537,9 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                                 $existing_var_type->getId() . ' null'
                             ),
                             $suppressed_issues
-                        )) {
-                            // fall through
-                        }
+                        );
                     } else {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new TypeDoesNotContainNull(
                                 'Cannot resolve types for ' . $key . ' - ' . $existing_var_type
                                     . ' does not contain null',
@@ -546,16 +547,14 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                                 $existing_var_type->getId()
                             ),
                             $suppressed_issues
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 } elseif (!($statements_analyzer->getSource()->getSource() instanceof TraitAnalyzer)
                     || ($key !== '$this'
                         && !($existing_var_type->hasLiteralClassString() && $new_type->hasLiteralClassString()))
                 ) {
                     if ($existing_var_type->from_docblock) {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new DocblockTypeContradiction(
                                 'Cannot resolve types for ' . $key . ' - docblock-defined type '
                                     . $existing_var_type->getId() . ' does not contain ' . $new_type->getId(),
@@ -563,11 +562,9 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                                 $existing_var_type->getId() . ' ' . $new_type->getId()
                             ),
                             $suppressed_issues
-                        )) {
-                            // fall through
-                        }
+                        );
                     } else {
-                        if (IssueBuffer::accepts(
+                        IssueBuffer::maybeAdd(
                             new TypeDoesNotContainType(
                                 'Cannot resolve types for ' . $key . ' - ' . $existing_var_type->getId()
                                     . ' does not contain ' . $new_type->getId(),
@@ -575,13 +572,11 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                                 $existing_var_type->getId() . ' ' . $new_type->getId()
                             ),
                             $suppressed_issues
-                        )) {
-                            // fall through
-                        }
+                        );
                     }
                 }
 
-                $failed_reconciliation = 2;
+                $failed_reconciliation = Reconciler::RECONCILIATION_EMPTY;
             }
         }
 
@@ -604,7 +599,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
         array $template_type_map,
         bool &$has_match = false,
         bool &$any_scalar_type_match_found = false
-    ) : Type\Union {
+    ): Type\Union {
         $matching_atomic_types = [];
 
         $has_cloned_type = false;
@@ -622,7 +617,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
                     continue;
                 }
 
-                $atomic_comparison_results = new \Psalm\Internal\Type\Comparator\TypeComparisonResult();
+                $atomic_comparison_results = new TypeComparisonResult();
 
                 if ($existing_type_part instanceof TNamedObject) {
                     $existing_type_part->was_static = false;
@@ -963,7 +958,7 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
         bool $negated,
         ?CodeLocation $code_location,
         array $suppressed_issues
-    ) : Type\Union {
+    ): Type\Union {
         $value = substr($assertion, $bracket_pos + 1, -1);
 
         $scalar_type = substr($assertion, 0, $bracket_pos);
@@ -1401,16 +1396,14 @@ class AssertionReconciler extends \Psalm\Type\Reconciler
 
         if ($existing_has_string && !$existing_has_object) {
             if (!$allow_string_comparison && $code_location) {
-                if (IssueBuffer::accepts(
+                IssueBuffer::maybeAdd(
                     new TypeDoesNotContainType(
                         'Cannot allow string comparison to object for ' . $key,
                         $code_location,
                         null
                     ),
                     $suppressed_issues
-                )) {
-                    // fall through
-                }
+                );
 
                 return Type::getMixed();
             } else {

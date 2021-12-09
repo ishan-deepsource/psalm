@@ -3,6 +3,8 @@
 namespace Psalm\Internal\Codebase;
 
 use Psalm\CodeLocation;
+use Psalm\Config;
+use Psalm\Internal\Analyzer\ProjectAnalyzer;
 use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\DataFlow\TaintSink;
 use Psalm\Internal\DataFlow\TaintSource;
@@ -25,10 +27,17 @@ use Psalm\Issue\TaintedUserSecret;
 use Psalm\IssueBuffer;
 use Psalm\Type\TaintKind;
 
+use function array_diff;
+use function array_filter;
 use function array_intersect;
 use function array_merge;
+use function array_unique;
 use function count;
+use function end;
 use function implode;
+use function json_encode;
+use function ksort;
+use function sort;
 use function strlen;
 use function substr;
 
@@ -49,7 +58,7 @@ class TaintFlowGraph extends DataFlowGraph
     /** @var array<string, array<string, true>> */
     private $specializations = [];
 
-    public function addNode(DataFlowNode $node) : void
+    public function addNode(DataFlowNode $node): void
     {
         $this->nodes[$node->id] = $node;
 
@@ -59,19 +68,19 @@ class TaintFlowGraph extends DataFlowGraph
         }
     }
 
-    public function addSource(TaintSource $node) : void
+    public function addSource(TaintSource $node): void
     {
         $this->sources[$node->id] = $node;
     }
 
-    public function addSink(TaintSink $node) : void
+    public function addSink(TaintSink $node): void
     {
         $this->sinks[$node->id] = $node;
         // in the rare case the sink is the _next_ node, this is necessary
         $this->nodes[$node->id] = $node;
     }
 
-    public function addGraph(self $taint) : void
+    public function addGraph(self $taint): void
     {
         $this->sources += $taint->sources;
         $this->sinks += $taint->sinks;
@@ -95,7 +104,7 @@ class TaintFlowGraph extends DataFlowGraph
         }
     }
 
-    public function getPredecessorPath(DataFlowNode $source) : string
+    public function getPredecessorPath(DataFlowNode $source): string
     {
         $location_summary = '';
 
@@ -126,7 +135,7 @@ class TaintFlowGraph extends DataFlowGraph
         return $source_descriptor;
     }
 
-    public function getSuccessorPath(DataFlowNode $sink) : string
+    public function getSuccessorPath(DataFlowNode $sink): string
     {
         $location_summary = '';
 
@@ -160,14 +169,14 @@ class TaintFlowGraph extends DataFlowGraph
     /**
      * @return list<array{location: ?CodeLocation, label: string, entry_path_type: string}>
      */
-    public function getIssueTrace(DataFlowNode $source) : array
+    public function getIssueTrace(DataFlowNode $source): array
     {
         $previous_source = $source->previous;
 
         $node = [
             'location' => $source->code_location,
             'label' => $source->label,
-            'entry_path_type' => \end($source->path_types) ?: ''
+            'entry_path_type' => end($source->path_types) ?: ''
         ];
 
         if ($previous_source) {
@@ -181,25 +190,25 @@ class TaintFlowGraph extends DataFlowGraph
         return [$node];
     }
 
-    public function connectSinksAndSources() : void
+    public function connectSinksAndSources(): void
     {
         $visited_source_ids = [];
 
         $sources = $this->sources;
         $sinks = $this->sinks;
 
-        \ksort($this->specializations);
-        \ksort($this->forward_edges);
+        ksort($this->specializations);
+        ksort($this->forward_edges);
 
         // reprocess resolved descendants up to a maximum nesting level of 40
         for ($i = 0; count($sinks) && count($sources) && $i < 40; $i++) {
             $new_sources = [];
 
-            \ksort($sources);
+            ksort($sources);
 
             foreach ($sources as $source) {
                 $source_taints = $source->taints;
-                \sort($source_taints);
+                sort($source_taints);
 
                 $visited_source_ids[$source->id][implode(',', $source_taints)] = true;
 
@@ -232,12 +241,12 @@ class TaintFlowGraph extends DataFlowGraph
         array $source_taints,
         array $sinks,
         array $visited_source_ids
-    ) : array {
+    ): array {
         $new_sources = [];
 
-        $config = \Psalm\Config::getInstance();
+        $config = Config::getInstance();
 
-        $project_analyzer = \Psalm\Internal\Analyzer\ProjectAnalyzer::getInstance();
+        $project_analyzer = ProjectAnalyzer::getInstance();
 
         foreach ($this->forward_edges[$generated_source->id] as $to_id => $path) {
             $path_type = $path->type;
@@ -250,14 +259,14 @@ class TaintFlowGraph extends DataFlowGraph
 
             $destination_node = $this->nodes[$to_id];
 
-            $new_taints = \array_unique(
-                \array_diff(
-                    \array_merge($source_taints, $added_taints),
+            $new_taints = array_unique(
+                array_diff(
+                    array_merge($source_taints, $added_taints),
                     $removed_taints
                 )
             );
 
-            \sort($new_taints);
+            sort($new_taints);
 
             if (isset($visited_source_ids[$to_id][implode(',', $new_taints)])) {
                 continue;
@@ -444,7 +453,7 @@ class TaintFlowGraph extends DataFlowGraph
                                 );
                         }
 
-                        IssueBuffer::accepts($issue);
+                        IssueBuffer::maybeAdd($issue);
                     }
                 }
             }
@@ -456,8 +465,8 @@ class TaintFlowGraph extends DataFlowGraph
             $new_destination->path_types = array_merge($generated_source->path_types, [$path_type]);
 
             $key = $to_id .
-                ' ' . \json_encode($new_destination->specialized_calls) .
-                ' ' . \json_encode($new_destination->taints);
+                ' ' . json_encode($new_destination->specialized_calls) .
+                ' ' . json_encode($new_destination->taints);
             $new_sources[$key] = $new_destination;
         }
 
@@ -465,7 +474,7 @@ class TaintFlowGraph extends DataFlowGraph
     }
 
     /** @return array<int, DataFlowNode> */
-    private function getSpecializedSources(DataFlowNode $source) : array
+    private function getSpecializedSources(DataFlowNode $source): array
     {
         $generated_sources = [];
 
@@ -505,7 +514,7 @@ class TaintFlowGraph extends DataFlowGraph
             }
         }
 
-        return \array_filter(
+        return array_filter(
             $generated_sources,
             function ($new_source): bool {
                 return isset($this->forward_edges[$new_source->id]);

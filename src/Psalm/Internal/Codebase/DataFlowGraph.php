@@ -5,10 +5,12 @@ namespace Psalm\Internal\Codebase;
 use Psalm\Internal\DataFlow\DataFlowNode;
 use Psalm\Internal\DataFlow\Path;
 
+use function abs;
 use function array_keys;
 use function array_merge;
 use function array_reverse;
 use function array_sum;
+use function count;
 use function strlen;
 use function strpos;
 use function substr;
@@ -18,7 +20,7 @@ abstract class DataFlowGraph
     /** @var array<string, array<string, Path>> */
     protected $forward_edges = [];
 
-    abstract public function addNode(DataFlowNode $node) : void;
+    abstract public function addNode(DataFlowNode $node): void;
 
     /**
      * @param array<string> $added_taints
@@ -30,7 +32,7 @@ abstract class DataFlowGraph
         string $path_type,
         ?array $added_taints = null,
         ?array $removed_taints = null
-    ) : void {
+    ): void {
         $from_id = $from->id;
         $to_id = $to->id;
 
@@ -46,7 +48,7 @@ abstract class DataFlowGraph
         ) {
             $to_line = $to->code_location->raw_line_number;
             $from_line = $from->code_location->raw_line_number;
-            $length = \abs($to_line - $from_line);
+            $length = abs($to_line - $from_line);
         }
 
         $this->forward_edges[$from_id][$to_id] = new Path($path_type, $length, $added_taints, $removed_taints);
@@ -61,7 +63,7 @@ abstract class DataFlowGraph
         string $path_type,
         string $expression_type,
         array $previous_path_types
-    ) : bool {
+    ): bool {
         $el = strlen($expression_type);
 
         // arraykey-fetch requires a matching arraykey-assignment at the same level
@@ -105,7 +107,7 @@ abstract class DataFlowGraph
     /**
      * @return array{int, int, int, float}
      */
-    public function getEdgeStats() : array
+    public function getEdgeStats(): array
     {
         $lengths = 0;
 
@@ -138,7 +140,7 @@ abstract class DataFlowGraph
 
         $mean = $lengths / $count;
 
-        return [$count, \count($origin_counts), \count($destination_counts), $mean];
+        return [$count, count($origin_counts), count($destination_counts), $mean];
     }
 
     /**

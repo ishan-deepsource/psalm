@@ -7,7 +7,9 @@ use Psalm\CodeLocation;
 use Psalm\Codebase;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\SimpleTypeInferer;
+use Psalm\Internal\Provider\NodeDataProvider;
 use Psalm\Internal\Scanner\FileScanner;
+use Psalm\Storage\AttributeArg;
 use Psalm\Storage\AttributeStorage;
 use Psalm\Storage\FileStorage;
 use Psalm\Type;
@@ -23,7 +25,7 @@ class AttributeResolver
         Aliases $aliases,
         PhpParser\Node\Attribute $stmt,
         ?string $fq_classlike_name
-    ) : AttributeStorage {
+    ): AttributeStorage {
         if ($stmt->name instanceof PhpParser\Node\Name\FullyQualified) {
             $fq_type_string = (string)$stmt->name;
         } else {
@@ -40,7 +42,7 @@ class AttributeResolver
 
             $const_type = SimpleTypeInferer::infer(
                 $codebase,
-                new \Psalm\Internal\Provider\NodeDataProvider(),
+                new NodeDataProvider(),
                 $arg_node->value,
                 $aliases,
                 null,
@@ -60,7 +62,7 @@ class AttributeResolver
                 $const_type = Type::getMixed();
             }
 
-            $args[] = new \Psalm\Storage\AttributeArg(
+            $args[] = new AttributeArg(
                 $key,
                 $const_type,
                 new CodeLocation($file_scanner, $arg_node->value)

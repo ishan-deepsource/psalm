@@ -1,10 +1,13 @@
 <?php
 namespace Psalm\Tests;
 
+use Psalm\Tests\Traits\InvalidCodeAnalysisTestTrait;
+use Psalm\Tests\Traits\ValidCodeAnalysisTestTrait;
+
 class GeneratorTest extends TestCase
 {
-    use Traits\InvalidCodeAnalysisTestTrait;
-    use Traits\ValidCodeAnalysisTestTrait;
+    use InvalidCodeAnalysisTestTrait;
+    use ValidCodeAnalysisTestTrait;
 
     /**
      * @return iterable<string,array{string,assertions?:array<string,string>,error_levels?:string[]}>
@@ -284,6 +287,24 @@ class GeneratorTest extends TestCase
                     ',
                 'assertions' => [
                     '$iterator' => 'NoRewindIterator<int, string>',
+                ]
+            ],
+            'detectYieldInNew' => [
+                '<?php
+                    /** @psalm-suppress MissingClosureReturnType */
+                    $_a = function() { return new RuntimeException(yield "a"); };
+                    ',
+                'assertions' => [
+                    '$_a' => 'pure-Closure():Generator<int, "a", mixed, RuntimeException>',
+                ]
+            ],
+            'detectYieldInArray' => [
+                '<?php
+                    /** @psalm-suppress MissingClosureReturnType */
+                    $_a = function() { return [yield "a"]; };
+                    ',
+                'assertions' => [
+                    '$_a' => 'pure-Closure():Generator<int, "a", mixed, array{"a"}>',
                 ]
             ],
         ];
