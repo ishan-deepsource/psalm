@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer\Statements\Expression\Call\Method;
 
 use PhpParser;
@@ -20,7 +21,12 @@ use Psalm\Internal\Type\TemplateResult;
 use Psalm\Internal\Type\TypeExpander;
 use Psalm\Plugin\EventHandler\Event\AddRemoveTaintsEvent;
 use Psalm\Type;
+use Psalm\Type\Atomic;
+use Psalm\Type\Atomic\TClosure;
 use Psalm\Type\Atomic\TGenericObject;
+use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
 use UnexpectedValueException;
 
 use function array_filter;
@@ -31,7 +37,7 @@ use function strtolower;
 class MethodCallReturnTypeFetcher
 {
     /**
-     * @param  Type\Atomic\TNamedObject|Type\Atomic\TTemplateParam  $static_type
+     * @param  TNamedObject|TTemplateParam  $static_type
      * @param list<PhpParser\Node\Arg> $args
      */
     public static function fetch(
@@ -43,12 +49,12 @@ class MethodCallReturnTypeFetcher
         ?MethodIdentifier $declaring_method_id,
         MethodIdentifier $premixin_method_id,
         string $cased_method_id,
-        Type\Atomic $lhs_type_part,
-        ?Type\Atomic $static_type,
+        Atomic $lhs_type_part,
+        ?Atomic $static_type,
         array $args,
         AtomicMethodCallAnalysisResult $result,
         TemplateResult $template_result
-    ): Type\Union {
+    ): Union {
         $call_map_id = $declaring_method_id ?? $method_id;
 
         $fq_class_name = $method_id->fq_class_name;
@@ -137,80 +143,95 @@ class MethodCallReturnTypeFetcher
         } else {
             $self_fq_class_name = $fq_class_name;
 
-            $return_type_candidate = $codebase->methods->getMethodReturnType(
-                $method_id,
-                $self_fq_class_name,
-                $statements_analyzer,
-                $args
-            );
+            if ($stmt->isFirstClassCallable()) {
+                $method_storage = ($class_storage->methods[$method_id->method_name] ?? null);
 
-            if ($return_type_candidate) {
-                $return_type_candidate = clone $return_type_candidate;
+                if ($method_storage) {
+                    $return_type_candidate = new Union([new TClosure(
+                        'Closure',
+                        $method_storage->params,
+                        $method_storage->return_type,
+                        $method_storage->pure
+                    )]);
+                } else {
+                    $return_type_candidate = Type::getClosure();
+                }
+            } else {
+                $return_type_candidate = $codebase->methods->getMethodReturnType(
+                    $method_id,
+                    $self_fq_class_name,
+                    $statements_analyzer,
+                    $args
+                );
 
-                if ($template_result->lower_bounds) {
+                if ($return_type_candidate) {
+                    $return_type_candidate = clone $return_type_candidate;
+
+                    if ($template_result->lower_bounds) {
+                        $return_type_candidate = TypeExpander::expandUnion(
+                            $codebase,
+                            $return_type_candidate,
+                            $fq_class_name,
+                            null,
+                            $class_storage->parent_class,
+                            true,
+                            false,
+                            $static_type instanceof TNamedObject
+                            && $codebase->classlike_storage_provider->get($static_type->value)->final,
+                            true
+                        );
+                    }
+
+                    $return_type_candidate = self::replaceTemplateTypes(
+                        $return_type_candidate,
+                        $template_result,
+                        $method_id,
+                        count($stmt->getArgs()),
+                        $codebase
+                    );
+
                     $return_type_candidate = TypeExpander::expandUnion(
                         $codebase,
                         $return_type_candidate,
-                        $fq_class_name,
-                        null,
+                        $self_fq_class_name,
+                        $static_type,
                         $class_storage->parent_class,
                         true,
                         false,
-                        $static_type instanceof Type\Atomic\TNamedObject
-                            && $codebase->classlike_storage_provider->get($static_type->value)->final,
+                        $static_type instanceof TNamedObject
+                        && $codebase->classlike_storage_provider->get($static_type->value)->final,
                         true
                     );
-                }
 
-                $return_type_candidate = self::replaceTemplateTypes(
-                    $return_type_candidate,
-                    $template_result,
-                    $method_id,
-                    count($stmt->getArgs()),
-                    $codebase
-                );
-
-                $return_type_candidate = TypeExpander::expandUnion(
-                    $codebase,
-                    $return_type_candidate,
-                    $self_fq_class_name,
-                    $static_type,
-                    $class_storage->parent_class,
-                    true,
-                    false,
-                    $static_type instanceof Type\Atomic\TNamedObject
-                        && $codebase->classlike_storage_provider->get($static_type->value)->final,
-                    true
-                );
-
-                $return_type_location = $codebase->methods->getMethodReturnTypeLocation(
-                    $method_id,
-                    $secondary_return_type_location
-                );
-
-                if ($secondary_return_type_location) {
-                    $return_type_location = $secondary_return_type_location;
-                }
-
-                $config = Config::getInstance();
-
-                // only check the type locally if it's defined externally
-                if ($return_type_location && !$config->isInProjectDirs($return_type_location->file_path)) {
-                    $return_type_candidate->check(
-                        $statements_analyzer,
-                        new CodeLocation($statements_analyzer, $stmt),
-                        $statements_analyzer->getSuppressedIssues(),
-                        $context->phantom_classes,
-                        true,
-                        false,
-                        false,
-                        $context->calling_method_id
+                    $return_type_location = $codebase->methods->getMethodReturnTypeLocation(
+                        $method_id,
+                        $secondary_return_type_location
                     );
-                }
-            } else {
-                $result->returns_by_ref =
-                    $result->returns_by_ref
+
+                    if ($secondary_return_type_location) {
+                        $return_type_location = $secondary_return_type_location;
+                    }
+
+                    $config = Config::getInstance();
+
+                    // only check the type locally if it's defined externally
+                    if ($return_type_location && !$config->isInProjectDirs($return_type_location->file_path)) {
+                        $return_type_candidate->check(
+                            $statements_analyzer,
+                            new CodeLocation($statements_analyzer, $stmt),
+                            $statements_analyzer->getSuppressedIssues(),
+                            $context->phantom_classes,
+                            true,
+                            false,
+                            false,
+                            $context->calling_method_id
+                        );
+                    }
+                } else {
+                    $result->returns_by_ref =
+                        $result->returns_by_ref
                         || $codebase->methods->getMethodReturnsByRef($method_id);
+                }
             }
         }
 
@@ -238,7 +259,7 @@ class MethodCallReturnTypeFetcher
      */
     public static function taintMethodCallResult(
         StatementsAnalyzer $statements_analyzer,
-        Type\Union $return_type_candidate,
+        Union $return_type_candidate,
         PhpParser\Node $name_expr,
         PhpParser\Node\Expr $var_expr,
         array $args,
@@ -521,12 +542,12 @@ class MethodCallReturnTypeFetcher
     }
 
     public static function replaceTemplateTypes(
-        Type\Union $return_type_candidate,
+        Union $return_type_candidate,
         TemplateResult $template_result,
         MethodIdentifier $method_id,
         int $arg_count,
         Codebase $codebase
-    ): Type\Union {
+    ): Union {
         if ($template_result->template_types) {
             $bindable_template_types = $return_type_candidate->getTemplateTypes();
 

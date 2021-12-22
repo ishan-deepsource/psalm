@@ -1,5 +1,7 @@
 <?php
-declare(strict_types = 1);
+
+declare(strict_types=1);
+
 namespace Psalm\Internal\LanguageServer;
 
 use AdvancedJsonRpc\Message as MessageBody;
@@ -51,9 +53,6 @@ class ProtocolStreamReader implements ProtocolReader
         asyncCall(
             /**
              * @return Generator<int, Promise<?string>, ?string, void>
-             * @psalm-suppress MixedReturnTypeCoercion
-             * @psalm-suppress MixedArgument in old Amp versions
-             * @psalm-suppress MixedAssignment in old Amp versions
              */
             function () use ($input): Generator {
                 while ($this->is_accepting_new_requests) {
@@ -119,7 +118,6 @@ class ProtocolStreamReader implements ProtocolReader
                             $this->emit('message', [$msg]);
                             /**
                              * @psalm-suppress DocblockTypeContradiction
-                             * @psalm-suppress RedundantConditionGivenDocblockType
                              */
                             if (!$this->is_accepting_new_requests) {
                                 // If we fork, don't read any bytes in the input buffer from the worker process.

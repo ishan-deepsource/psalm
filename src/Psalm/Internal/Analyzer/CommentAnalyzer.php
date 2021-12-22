@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer;
 
 use PhpParser;
@@ -13,7 +14,7 @@ use Psalm\Internal\Scanner\VarDocblockComment;
 use Psalm\Internal\Type\TypeAlias;
 use Psalm\Internal\Type\TypeParser;
 use Psalm\Internal\Type\TypeTokenizer;
-use Psalm\Type;
+use Psalm\Type\Union;
 
 use function array_merge;
 use function count;
@@ -36,7 +37,7 @@ class CommentAnalyzer
     public const TYPE_REGEX = '(\??\\\?[\(\)A-Za-z0-9_&\<\.=,\>\[\]\-\{\}:|?\\\\]*|\$[a-zA-Z_0-9_]+)';
 
     /**
-     * @param  array<string, array<string, Type\Union>>|null   $template_type_map
+     * @param  array<string, array<string, Union>>|null   $template_type_map
      * @param  array<string, TypeAlias> $type_aliases
      *
      * @throws DocblockParseException if there was a problem parsing the docblock
@@ -63,7 +64,7 @@ class CommentAnalyzer
     }
 
     /**
-     * @param  array<string, array<string, Type\Union>>|null   $template_type_map
+     * @param  array<string, array<string, Union>>|null   $template_type_map
      * @param  array<string, TypeAlias> $type_aliases
      *
      * @return list<VarDocblockComment>
@@ -194,8 +195,10 @@ class CommentAnalyzer
                 || isset($parsed_docblock->tags['readonly'])
                 || isset($parsed_docblock->tags['psalm-readonly'])
                 || isset($parsed_docblock->tags['psalm-readonly-allow-private-mutation'])
+                || isset($parsed_docblock->tags['psalm-allow-private-mutation'])
                 || isset($parsed_docblock->tags['psalm-taint-escape'])
                 || isset($parsed_docblock->tags['psalm-internal'])
+                || isset($parsed_docblock->tags['psalm-suppress'])
                 || $parsed_docblock->description)
         ) {
             $var_comment = new VarDocblockComment();
@@ -245,7 +248,11 @@ class CommentAnalyzer
         }
 
         if (isset($parsed_docblock->tags['psalm-suppress'])) {
-            $var_comment->suppressed_issues = $parsed_docblock->tags['psalm-suppress'];
+            foreach ($parsed_docblock->tags['psalm-suppress'] as $offset => $suppress_entry) {
+                foreach (DocComment::parseSuppressList($suppress_entry) as $issue_offset => $suppressed_issue) {
+                    $var_comment->suppressed_issues[$issue_offset + $offset] = $suppressed_issue;
+                }
+            }
         }
     }
 

@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\PhpVisitor\Reflector;
 
 use PhpParser;
@@ -8,10 +9,11 @@ use Psalm\Internal\Codebase\Scanner as CodebaseScanner;
 use Psalm\Storage\ClassLikeStorage;
 use Psalm\Storage\FileStorage;
 use Psalm\Type;
+use Psalm\Type\Atomic\TNull;
+use Psalm\Type\Union;
 use UnexpectedValueException;
 
 use function implode;
-use function reset;
 use function strtolower;
 
 class TypeHintResolver
@@ -27,7 +29,7 @@ class TypeHintResolver
         Aliases $aliases,
         int $php_major_version,
         int $php_minor_version
-    ): Type\Union {
+    ): Union {
         if ($hint instanceof PhpParser\Node\UnionType) {
             $type = null;
 
@@ -96,13 +98,12 @@ class TypeHintResolver
         );
 
         if ($type_string) {
-            $atomic_types = $type->getAtomicTypes();
-            $atomic_type = reset($atomic_types);
+            $atomic_type = $type->getSingleAtomic();
             $atomic_type->text = $type_string;
         }
 
         if ($is_nullable) {
-            $type->addType(new Type\Atomic\TNull);
+            $type->addType(new TNull);
         }
 
         return $type;

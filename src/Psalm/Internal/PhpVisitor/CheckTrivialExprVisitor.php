@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\PhpVisitor;
 
 use PhpParser;
@@ -15,10 +16,6 @@ class CheckTrivialExprVisitor extends PhpParser\NodeVisitorAbstract
 
     private function checkNonTrivialExpr(PhpParser\Node\Expr $node): bool
     {
-        /**
-         * @psalm-suppress UndefinedClass
-         * @psalm-suppress TypeDoesNotContainType
-         */
         if ($node instanceof PhpParser\Node\Expr\ArrayDimFetch
             || $node instanceof PhpParser\Node\Expr\Closure
             || $node instanceof PhpParser\Node\Expr\ClosureUse

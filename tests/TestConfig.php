@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Tests;
 
 use Psalm\Config;
@@ -15,9 +16,6 @@ class TestConfig extends Config
     /** @var ProjectFileFilter|null */
     private static $cached_project_files = null;
 
-    /**
-     * @psalm-suppress PossiblyNullPropertyAssignmentValue because cache_directory isn't strictly nullable
-     */
     public function __construct()
     {
         parent::__construct();

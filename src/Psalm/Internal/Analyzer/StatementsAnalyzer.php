@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer;
 
 use InvalidArgumentException;
@@ -17,6 +18,9 @@ use Psalm\Internal\Analyzer\Statements\Block\IfElseAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Block\SwitchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Block\TryAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Block\WhileAnalyzer;
+use Psalm\Internal\Analyzer\Statements\BreakAnalyzer;
+use Psalm\Internal\Analyzer\Statements\ContinueAnalyzer;
+use Psalm\Internal\Analyzer\Statements\EchoAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Assignment\InstancePropertyAssignmentAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\AssignmentAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ClassConstFetchAnalyzer;
@@ -24,8 +28,12 @@ use Psalm\Internal\Analyzer\Statements\Expression\Fetch\ConstFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\Fetch\VariableFetchAnalyzer;
 use Psalm\Internal\Analyzer\Statements\Expression\SimpleTypeInferer;
 use Psalm\Internal\Analyzer\Statements\ExpressionAnalyzer;
+use Psalm\Internal\Analyzer\Statements\GlobalAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ReturnAnalyzer;
+use Psalm\Internal\Analyzer\Statements\StaticAnalyzer;
 use Psalm\Internal\Analyzer\Statements\ThrowAnalyzer;
+use Psalm\Internal\Analyzer\Statements\UnsetAnalyzer;
+use Psalm\Internal\Analyzer\Statements\UnusedAssignmentRemover;
 use Psalm\Internal\Codebase\DataFlowGraph;
 use Psalm\Internal\Codebase\TaintFlowGraph;
 use Psalm\Internal\Codebase\VariableUseGraph;
@@ -57,8 +65,10 @@ use function array_combine;
 use function array_keys;
 use function array_merge;
 use function array_search;
+use function count;
 use function fwrite;
 use function get_class;
+use function in_array;
 use function is_string;
 use function preg_split;
 use function reset;
@@ -321,7 +331,7 @@ class StatementsAnalyzer extends SourceAnalyzer
                     ConstFetchAnalyzer::setConstType(
                         $statements_analyzer,
                         $const_name,
-                        Statements\Expression\SimpleTypeInferer::infer(
+                        SimpleTypeInferer::infer(
                             $codebase,
                             $statements_analyzer->node_data,
                             $stmt->expr->getArgs()[1]->value,
@@ -420,18 +430,25 @@ class StatementsAnalyzer extends SourceAnalyzer
                     foreach ($suppressed as $offset => $suppress_entry) {
                         foreach (DocComment::parseSuppressList($suppress_entry) as $issue_offset => $issue_type) {
                             $new_issues[$issue_offset + $offset] = $issue_type;
+                        }
+                    }
 
+                    if ($codebase->track_unused_suppressions
+                        && (
+                            (count($new_issues) === 1) // UnusedPsalmSuppress by itself should be marked as unused
+                            || !in_array("UnusedPsalmSuppress", $new_issues)
+                        )
+                    ) {
+                        foreach ($new_issues as $offset => $issue_type) {
                             if ($issue_type === 'InaccessibleMethod') {
                                 continue;
                             }
 
-                            if ($codebase->track_unused_suppressions) {
-                                IssueBuffer::addUnusedSuppression(
-                                    $statements_analyzer->getFilePath(),
-                                    $issue_offset + $offset,
-                                    $issue_type
-                                );
-                            }
+                            IssueBuffer::addUnusedSuppression(
+                                $statements_analyzer->getFilePath(),
+                                $offset,
+                                $issue_type
+                            );
                         }
                     }
 
@@ -527,7 +544,7 @@ class StatementsAnalyzer extends SourceAnalyzer
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Const_) {
             ConstFetchAnalyzer::analyzeConstAssignment($statements_analyzer, $stmt, $context);
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Unset_) {
-            Statements\UnsetAnalyzer::analyze($statements_analyzer, $stmt, $context);
+            UnsetAnalyzer::analyze($statements_analyzer, $stmt, $context);
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Return_) {
             ReturnAnalyzer::analyze($statements_analyzer, $stmt, $context);
             $context->has_returned = true;
@@ -537,13 +554,13 @@ class StatementsAnalyzer extends SourceAnalyzer
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Switch_) {
             SwitchAnalyzer::analyze($statements_analyzer, $stmt, $context);
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Break_) {
-            Statements\BreakAnalyzer::analyze($statements_analyzer, $stmt, $context);
+            BreakAnalyzer::analyze($statements_analyzer, $stmt, $context);
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Continue_) {
-            Statements\ContinueAnalyzer::analyze($statements_analyzer, $stmt, $context);
+            ContinueAnalyzer::analyze($statements_analyzer, $stmt, $context);
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Static_) {
-            Statements\StaticAnalyzer::analyze($statements_analyzer, $stmt, $context);
+            StaticAnalyzer::analyze($statements_analyzer, $stmt, $context);
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Echo_) {
-            if (Statements\EchoAnalyzer::analyze($statements_analyzer, $stmt, $context) === false) {
+            if (EchoAnalyzer::analyze($statements_analyzer, $stmt, $context) === false) {
                 return false;
             }
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Function_) {
@@ -562,7 +579,7 @@ class StatementsAnalyzer extends SourceAnalyzer
         } elseif ($stmt instanceof PhpParser\Node\Stmt\InlineHTML) {
             // do nothing
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Global_) {
-            Statements\GlobalAnalyzer::analyze($statements_analyzer, $stmt, $context, $global_context);
+            GlobalAnalyzer::analyze($statements_analyzer, $stmt, $context, $global_context);
         } elseif ($stmt instanceof PhpParser\Node\Stmt\Property) {
             InstancePropertyAssignmentAnalyzer::analyzeStatement($statements_analyzer, $stmt, $context);
         } elseif ($stmt instanceof PhpParser\Node\Stmt\ClassConst) {
@@ -718,7 +735,7 @@ class StatementsAnalyzer extends SourceAnalyzer
 
         $project_analyzer = $this->getProjectAnalyzer();
 
-        $unused_var_remover = new Statements\UnusedAssignmentRemover();
+        $unused_var_remover = new UnusedAssignmentRemover();
 
         if ($this->data_flow_graph instanceof VariableUseGraph
             && $codebase->config->limit_method_complexity

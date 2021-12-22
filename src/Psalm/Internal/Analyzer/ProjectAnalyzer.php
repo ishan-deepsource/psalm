@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer;
 
 use Amp\Loop;
@@ -308,7 +309,11 @@ class ProjectAnalyzer
         $file_extensions = $this->config->getFileExtensions();
 
         foreach ($this->config->getProjectDirectories() as $dir_name) {
-            $file_paths = $this->file_provider->getFilesInDir($dir_name, $file_extensions);
+            $file_paths = $this->file_provider->getFilesInDir(
+                $dir_name,
+                $file_extensions,
+                [$this->config, 'isInProjectDirs']
+            );
 
             foreach ($file_paths as $file_path) {
                 if ($this->config->isInProjectDirs($file_path)) {
@@ -318,7 +323,11 @@ class ProjectAnalyzer
         }
 
         foreach ($this->config->getExtraDirectories() as $dir_name) {
-            $file_paths = $this->file_provider->getFilesInDir($dir_name, $file_extensions);
+            $file_paths = $this->file_provider->getFilesInDir(
+                $dir_name,
+                $file_extensions,
+                [$this->config, 'isInExtraDirs']
+            );
 
             foreach ($file_paths as $file_path) {
                 if ($this->config->isInExtraDirs($file_path)) {
@@ -610,11 +619,7 @@ class ProjectAnalyzer
             && $this->project_cache_provider->canDiffFiles()
         ) {
             $deleted_files = $this->file_reference_provider->getDeletedReferencedFiles();
-            $diff_files = $deleted_files;
-
-            foreach ($this->config->getProjectDirectories() as $dir_name) {
-                $diff_files = array_merge($diff_files, $this->getDiffFilesInDir($dir_name, $this->config));
-            }
+            $diff_files = array_merge($deleted_files, $this->getDiffFiles());
         }
 
         $this->progress->write($this->generatePHPVersionMessage());
@@ -684,17 +689,11 @@ class ProjectAnalyzer
             true
         );
 
-        if ($this->project_cache_provider && $this->parser_cache_provider) {
-            $removed_parser_files = $this->parser_cache_provider->deleteOldParserCaches(
-                $is_diff ? $this->project_cache_provider->getLastRun(PSALM_VERSION) : $start_checks
-            );
+        if ($this->parser_cache_provider && !$is_diff) {
+            $removed_parser_files = $this->parser_cache_provider->deleteOldParserCaches($start_checks);
 
             if ($removed_parser_files) {
                 $this->progress->debug('Removed ' . $removed_parser_files . ' old parser caches' . "\n");
-            }
-
-            if ($is_diff) {
-                $this->parser_cache_provider->touchParserCaches($this->getAllFiles($this->config), $start_checks);
             }
         }
     }
@@ -1058,8 +1057,13 @@ class ProjectAnalyzer
     private function checkDirWithConfig(string $dir_name, Config $config, bool $allow_non_project_files = false): void
     {
         $file_extensions = $config->getFileExtensions();
+        $directory_filter = $allow_non_project_files ? null : [$this->config, 'isInProjectDirs'];
 
-        $file_paths = $this->file_provider->getFilesInDir($dir_name, $file_extensions);
+        $file_paths = $this->file_provider->getFilesInDir(
+            $dir_name,
+            $file_extensions,
+            $directory_filter
+        );
 
         $files_to_scan = [];
 
@@ -1070,24 +1074,6 @@ class ProjectAnalyzer
         }
 
         $this->codebase->addFilesToAnalyze($files_to_scan);
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function getAllFiles(Config $config): array
-    {
-        $file_extensions = $config->getFileExtensions();
-        $file_paths = [];
-
-        foreach ($config->getProjectDirectories() as $dir_name) {
-            $file_paths = array_merge(
-                $file_paths,
-                $this->file_provider->getFilesInDir($dir_name, $file_extensions)
-            );
-        }
-
-        return $file_paths;
     }
 
     public function addProjectFile(string $file_path): void
@@ -1103,10 +1089,8 @@ class ProjectAnalyzer
     /**
      * @return list<string>
      */
-    protected function getDiffFilesInDir(string $dir_name, Config $config): array
+    protected function getDiffFiles(): array
     {
-        $file_extensions = $config->getFileExtensions();
-
         if (!$this->parser_cache_provider || !$this->project_cache_provider) {
             throw new UnexpectedValueException('Parser cache provider cannot be null here');
         }
@@ -1115,16 +1099,12 @@ class ProjectAnalyzer
 
         $last_run = $this->project_cache_provider->getLastRun(PSALM_VERSION);
 
-        $file_paths = $this->file_provider->getFilesInDir($dir_name, $file_extensions);
-
-        foreach ($file_paths as $file_path) {
-            if ($config->isInProjectDirs($file_path)) {
-                if ($this->file_provider->getModifiedTime($file_path) >= $last_run
-                    && $this->parser_cache_provider->loadExistingFileContentsFromCache($file_path)
-                        !== $this->file_provider->getContents($file_path)
-                ) {
-                    $diff_files[] = $file_path;
-                }
+        foreach ($this->project_files as $file_path) {
+            if ($this->file_provider->getModifiedTime($file_path) >= $last_run
+                && $this->parser_cache_provider->loadExistingFileContentsFromCache($file_path)
+                    !== $this->file_provider->getContents($file_path)
+            ) {
+                $diff_files[] = $file_path;
             }
         }
 

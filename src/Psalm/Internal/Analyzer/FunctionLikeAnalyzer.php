@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Analyzer;
 
 use PhpParser;
@@ -44,7 +45,13 @@ use Psalm\Storage\FunctionLikeStorage;
 use Psalm\Storage\FunctionStorage;
 use Psalm\Storage\MethodStorage;
 use Psalm\Type;
+use Psalm\Type\Atomic\TArray;
+use Psalm\Type\Atomic\TClosure;
+use Psalm\Type\Atomic\TGenericObject;
+use Psalm\Type\Atomic\TList;
 use Psalm\Type\Atomic\TNamedObject;
+use Psalm\Type\Atomic\TTemplateParam;
+use Psalm\Type\Union;
 use UnexpectedValueException;
 
 use function array_combine;
@@ -53,9 +60,9 @@ use function array_key_exists;
 use function array_keys;
 use function array_merge;
 use function array_search;
-use function array_values;
 use function count;
 use function end;
+use function in_array;
 use function is_string;
 use function md5;
 use function microtime;
@@ -91,7 +98,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
     protected $is_static = false;
 
     /**
-     * @var ?array<string, Type\Union>
+     * @var ?array<string, Union>
      */
     protected $return_vars_in_scope = [];
 
@@ -101,7 +108,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
     protected $return_vars_possibly_in_scope = [];
 
     /**
-     * @var Type\Union|null
+     * @var Union|null
      */
     private $local_return_type;
 
@@ -186,8 +193,12 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         $project_analyzer = $this->getProjectAnalyzer();
 
         if ($codebase->track_unused_suppressions && !isset($storage->suppressed_issues[0])) {
-            foreach ($storage->suppressed_issues as $offset => $issue_name) {
-                IssueBuffer::addUnusedSuppression($this->getFilePath(), $offset, $issue_name);
+            if (count($storage->suppressed_issues) === 1 // UnusedPsalmSuppress by itself should be marked as unused
+                || !in_array("UnusedPsalmSuppress", $storage->suppressed_issues)
+            ) {
+                foreach ($storage->suppressed_issues as $offset => $issue_name) {
+                    IssueBuffer::addUnusedSuppression($this->getFilePath(), $offset, $issue_name);
+                }
             }
         }
 
@@ -596,9 +607,9 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
 
             if ($function_type = $statements_analyzer->node_data->getType($this->function)) {
                 /**
-                 * @var Type\Atomic\TClosure
+                 * @var TClosure
                  */
-                $closure_atomic = array_values($function_type->getAtomicTypes())[0];
+                $closure_atomic = $function_type->getSingleAtomic();
 
                 if (($storage->return_type === $storage->signature_return_type)
                     && (!$storage->return_type
@@ -654,8 +665,8 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         true
                     )
                 )) {
-                    $input_type = new Type\Union([new TNamedObject($expected_exception)]);
-                    $container_type = new Type\Union([new TNamedObject('Exception'), new TNamedObject('Throwable')]);
+                    $input_type = new Union([new TNamedObject($expected_exception)]);
+                    $container_type = new Union([new TNamedObject('Exception'), new TNamedObject('Throwable')]);
 
                     if (!UnionTypeComparator::isContainedBy($codebase, $input_type, $container_type)) {
                         IssueBuffer::maybeAdd(
@@ -1028,12 +1039,12 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
 
             if ($function_param->is_variadic) {
                 if ($storage->allow_named_arg_calls) {
-                    $var_type = new Type\Union([
-                        new Type\Atomic\TArray([Type::getArrayKey(), $param_type]),
+                    $var_type = new Union([
+                        new TArray([Type::getArrayKey(), $param_type]),
                     ]);
                 } else {
-                    $var_type = new Type\Union([
-                        new Type\Atomic\TList($param_type),
+                    $var_type = new Union([
+                        new TList($param_type),
                     ]);
                 }
             }
@@ -1385,7 +1396,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
     public function verifyReturnType(
         array $function_stmts,
         StatementsAnalyzer $statements_analyzer,
-        ?Type\Union $return_type = null,
+        ?Union $return_type = null,
         ?string $fq_class_name = null,
         ?CodeLocation $return_type_location = null,
         bool $did_explicitly_return = false,
@@ -1409,7 +1420,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
     public function addOrUpdateParamType(
         ProjectAnalyzer $project_analyzer,
         string $param_name,
-        Type\Union $inferred_return_type,
+        Union $inferred_return_type,
         bool $docblock_only = false
     ): void {
         $manipulator = FunctionDocblockManipulator::getForFunction(
@@ -1637,7 +1648,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
     }
 
     /**
-     * @return array<string, array<string, Type\Union>>|null
+     * @return array<string, array<string, Union>>|null
      */
     public function getTemplateTypeMap(): ?array
     {
@@ -1707,7 +1718,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
         self::$no_effects_hashes = [];
     }
 
-    public function getLocalReturnType(Type\Union $storage_return_type, bool $final = false): Type\Union
+    public function getLocalReturnType(Union $storage_return_type, bool $final = false): Union
     {
         if ($this->local_return_type) {
             return $this->local_return_type;
@@ -1781,8 +1792,8 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                     foreach ($appearing_class_storage->template_types as $param_name => $template_map) {
                         $key = array_keys($template_map)[0];
 
-                        $template_params[] = new Type\Union([
-                            new Type\Atomic\TTemplateParam(
+                        $template_params[] = new Union([
+                            new TTemplateParam(
                                 $param_name,
                                 reset($template_map),
                                 $key
@@ -1790,7 +1801,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                         ]);
                     }
 
-                    $this_object_type = new Type\Atomic\TGenericObject(
+                    $this_object_type = new TGenericObject(
                         $context->self,
                         $template_params
                     );
@@ -1800,7 +1811,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                     $this_object_type->was_static = !$storage->final;
                 }
 
-                $context->vars_in_scope['$this'] = new Type\Union([$this_object_type]);
+                $context->vars_in_scope['$this'] = new Union([$this_object_type]);
 
                 if ($codebase->taint_flow_graph
                     && $storage->specialize_call
@@ -1927,7 +1938,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
                 $closure_return_type = Type::getMixed();
             }
 
-            $closure_type = new Type\Atomic\TClosure(
+            $closure_type = new TClosure(
                 'Closure',
                 $storage->params,
                 $closure_return_type
@@ -1940,7 +1951,7 @@ abstract class FunctionLikeAnalyzer extends SourceAnalyzer
 
             $type_provider->setType(
                 $this->function,
-                new Type\Union([
+                new Union([
                     $closure_type,
                 ])
             );

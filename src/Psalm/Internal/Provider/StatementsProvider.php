@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Provider;
 
 use PhpParser;
@@ -150,7 +151,6 @@ class StatementsProvider
 
             $existing_statements = $this->parser_cache_provider->loadExistingStatementsFromCache($file_path);
 
-            /** @psalm-suppress DocblockTypeContradiction */
             if ($existing_statements && !$existing_statements[0] instanceof PhpParser\Node\Stmt) {
                 $existing_statements = null;
             }

@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Tests\Loop;
 
 use Psalm\Tests\TestCase;
@@ -429,6 +430,29 @@ class ForeachTest extends TestCase
                 'error_levels' => [
                     'MixedAssignment',
                 ],
+            ],
+            'noMixedAssigmentWithIfAssertion' => [
+                '<?php
+                    $object = new stdClass();
+                    $reflection = new ReflectionClass($object);
+
+                    foreach ($reflection->getProperties() as $property) {
+                        $message = $property->getValue($reflection->newInstance());
+
+                        if (!is_string($message)) {
+                            throw new RuntimeException();
+                        }
+                    }',
+            ],
+            'noMixedAssigmentWithAssertion' => [
+                '<?php
+                    $object = new stdClass();
+                    $reflection = new ReflectionClass($object);
+
+                    foreach ($reflection->getProperties() as $property) {
+                        $message = $property->getValue($reflection->newInstance());
+                        assert(is_string($message));
+                    }',
             ],
             'nullToMixedWithNullCheckAndContinue' => [
                 '<?php

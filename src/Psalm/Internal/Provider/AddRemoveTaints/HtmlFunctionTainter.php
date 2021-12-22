@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Internal\Provider\AddRemoveTaints;
 
 use PhpParser;
@@ -26,6 +27,7 @@ class HtmlFunctionTainter implements AddTaintsInterface, RemoveTaintsInterface
 
         if (!$statements_analyzer instanceof StatementsAnalyzer
             || !$item instanceof PhpParser\Node\Expr\FuncCall
+            || $item->isFirstClassCallable()
             || !$item->name instanceof PhpParser\Node\Name
             || count($item->name->parts) !== 1
             || count($item->getArgs()) === 0
@@ -74,6 +76,7 @@ class HtmlFunctionTainter implements AddTaintsInterface, RemoveTaintsInterface
 
         if (!$statements_analyzer instanceof StatementsAnalyzer
             || !$item instanceof PhpParser\Node\Expr\FuncCall
+            || $item->isFirstClassCallable()
             || !$item->name instanceof PhpParser\Node\Name
             || count($item->name->parts) !== 1
             || count($item->getArgs()) === 0

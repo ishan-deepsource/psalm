@@ -1,15 +1,16 @@
 <?php
+
 namespace Psalm\Storage;
 
 use Psalm\CodeLocation;
 use Psalm\Internal\Analyzer\ClassLikeAnalyzer;
 use Psalm\Internal\Scanner\UnresolvedConstantComponent;
-use Psalm\Type;
+use Psalm\Type\Union;
 
 class ClassConstantStorage
 {
     /**
-     * @var ?Type\Union
+     * @var ?Union
      */
     public $type;
 
@@ -39,11 +40,6 @@ class ClassConstantStorage
     public $deprecated = false;
 
     /**
-     * @var list<AttributeStorage>
-     */
-    public $attributes = [];
-
-    /**
      * @var ?string
      */
     public $description;
@@ -51,7 +47,7 @@ class ClassConstantStorage
     /**
      * @param ClassLikeAnalyzer::VISIBILITY_* $visibility
      */
-    public function __construct(?Type\Union $type, int $visibility, ?CodeLocation $location)
+    public function __construct(?Union $type, int $visibility, ?CodeLocation $location)
     {
         $this->visibility = $visibility;
         $this->location = $location;

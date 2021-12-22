@@ -1,4 +1,5 @@
 <?php
+
 namespace Psalm\Tests;
 
 use Psalm\Config;
@@ -1377,8 +1378,6 @@ class FunctionCallTest extends TestCase
                 '<?php
                     /**
                      * @param string[] $ids
-                     * @psalm-suppress MissingClosureReturnType
-                     * @psalm-suppress MixedArgumentTypeCoercion
                      */
                     function(array $ids): array {
                         return \preg_replace_callback(
@@ -1764,6 +1763,14 @@ class FunctionCallTest extends TestCase
                 ],
                 [],
                 '8.1',
+            ],
+            'number_formatNamedArgument' => [
+                '<?php
+                    echo number_format(10.363, 1, thousands_separator: " ");
+                ',
+                [],
+                [],
+                '8.0',
             ],
         ];
     }

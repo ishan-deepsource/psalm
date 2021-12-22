@@ -1,6 +1,9 @@
 <?php
+
 namespace Psalm;
 
+use Psalm\CodeLocation\Raw;
+use Psalm\Exception\CodeException;
 use Psalm\Internal\Analyzer\FileAnalyzer;
 use Psalm\Internal\Analyzer\IssueData;
 use Psalm\Internal\Analyzer\ProjectAnalyzer;
@@ -240,7 +243,7 @@ class IssueBuffer
 
     /**
      * Add an issue to be emitted
-     * @throws  Exception\CodeException
+     * @throws  CodeException
      */
     public static function add(CodeIssue $e, bool $is_fixable = false): bool
     {
@@ -306,7 +309,7 @@ class IssueBuffer
                     ? $e->getMixedOriginMessage()
                     : $e->message);
 
-            throw new Exception\CodeException(
+            throw new CodeException(
                 $issue_type
                     . ' - ' . $e->getShortLocationWithPrevious()
                     . ':' . $e->code_location->getColumn()
@@ -326,11 +329,31 @@ class IssueBuffer
         return true;
     }
 
+    private static function removeRecordedIssue(string $issue_type, int $file_offset): void
+    {
+        $recorded_issues = self::$recorded_issues[self::$recording_level];
+        $filtered_issues = [];
+
+        foreach ($recorded_issues as $issue) {
+            [$from] = $issue->code_location->getSelectionBounds();
+
+            if ($issue::getIssueType() !== $issue_type || $from !== $file_offset) {
+                $filtered_issues[] = $issue;
+            }
+        }
+
+        self::$recorded_issues[self::$recording_level] = $filtered_issues;
+    }
+
     /**
      * This will try to remove an issue that has been added for emission
      */
     public static function remove(string $file_path, string $issue_type, int $file_offset): void
     {
+        if (self::$recording_level > 0) {
+            self::removeRecordedIssue($issue_type, $file_offset);
+        }
+
         if (!isset(self::$issues_data[$file_path])) {
             return;
         }
@@ -458,7 +481,7 @@ class IssueBuffer
                 self::add(
                     new UnusedPsalmSuppress(
                         'This suppression is never used',
-                        new CodeLocation\Raw(
+                        new Raw(
                             $file_contents,
                             $file_path,
                             $config->shortenFileName($file_path),
@@ -666,7 +689,7 @@ class IssueBuffer
                     : $error_count . ' errors'
                 ) . ' found' . "\n";
             } else {
-                echo 'No errors found!' . "\n";
+                self::printSuccessMessage();
             }
 
             $show_info = $project_analyzer->stdout_report_options->show_info;
@@ -746,10 +769,6 @@ class IssueBuffer
             if ($project_analyzer->project_cache_provider) {
                 $project_analyzer->project_cache_provider->processSuccessfulRun($start_time, PSALM_VERSION);
             }
-
-            if ($codebase->statements_provider->parser_cache_provider) {
-                $codebase->statements_provider->parser_cache_provider->processSuccessfulRun();
-            }
         }
 
         if ($error_count
@@ -759,6 +778,37 @@ class IssueBuffer
         ) {
             exit(2);
         }
+    }
+
+    public static function printSuccessMessage(): void
+    {
+        // this message will be printed
+        $message = "No errors found!";
+
+        // color block will contain this amount of characters
+        $blockSize = 30;
+
+        // message with prepended and appended whitespace to be same as $blockSize
+        $messageWithPadding = str_repeat(' ', 7) . $message . str_repeat(' ', 7);
+
+        // top side of the color block
+        $paddingTop = str_repeat(' ', $blockSize);
+
+        // bottom side of the color block
+        $paddingBottom = str_repeat(' ', $blockSize);
+
+        // background color, 42 = green
+        $background = "42";
+
+        // foreground/text color, 30 = black
+        $foreground = "30";
+
+        // text style, 1 = bold
+        $style = "1";
+
+        echo "\e[{$background};{$style}m{$paddingTop}\e[0m" . "\n";
+        echo "\e[{$background};{$foreground};{$style}m{$messageWithPadding}\e[0m" . "\n";
+        echo "\e[{$background};{$style}m{$paddingBottom}\e[0m" . "\n";
     }
 
     /**

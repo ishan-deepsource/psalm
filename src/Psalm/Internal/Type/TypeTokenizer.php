@@ -1,8 +1,10 @@
 <?php
+
 namespace Psalm\Internal\Type;
 
 use Psalm\Aliases;
 use Psalm\Exception\TypeParseTreeException;
+use Psalm\Internal\Type\TypeAlias\InlineTypeAlias;
 use Psalm\Type;
 
 use function array_splice;
@@ -97,7 +99,6 @@ class TypeTokenizer
      *
      * @return list<array{string, int}>
      *
-     * @psalm-suppress ComplexMethod
      * @psalm-suppress PossiblyUndefinedIntArrayOffset
      */
     public static function tokenize(string $string_type, bool $ignore_space = true): array
@@ -478,7 +479,7 @@ class TypeTokenizer
             if (isset($type_aliases[$string_type_token[0]])) {
                 $type_alias = $type_aliases[$string_type_token[0]];
 
-                if ($type_alias instanceof TypeAlias\InlineTypeAlias) {
+                if ($type_alias instanceof InlineTypeAlias) {
                     $replacement_tokens = $type_alias->replacement_tokens;
 
                     array_unshift($replacement_tokens, ['(', $i]);

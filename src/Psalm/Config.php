@@ -10,6 +10,7 @@ use DomElement;
 use InvalidArgumentException;
 use LogicException;
 use OutOfBoundsException;
+use Psalm\CodeLocation\Raw;
 use Psalm\Config\IssueHandler;
 use Psalm\Config\ProjectFileFilter;
 use Psalm\Config\TaintAnalysisFileFilter;
@@ -31,6 +32,7 @@ use Psalm\Issue\FunctionIssue;
 use Psalm\Issue\MethodIssue;
 use Psalm\Issue\PropertyIssue;
 use Psalm\Issue\VariableIssue;
+use Psalm\Plugin\PluginEntryPointInterface;
 use Psalm\Progress\Progress;
 use Psalm\Progress\VoidProgress;
 use SimpleXMLElement;
@@ -806,7 +808,7 @@ class Config
                 $config->config_issues[] = new ConfigIssue(
                     'Attribute "' . $attribute->name . '" is deprecated '
                     . 'and is going to be removed in the next major version',
-                    new CodeLocation\Raw(
+                    new Raw(
                         $file_contents,
                         $config_path,
                         basename($config_path),
@@ -835,7 +837,7 @@ class Config
                 $config->config_issues[] = new ConfigIssue(
                     'Element "' . $deprecated_element . '" is deprecated '
                     . 'and is going to be removed in the next major version',
-                    new CodeLocation\Raw(
+                    new Raw(
                         $file_contents,
                         $config_path,
                         basename($config_path),
@@ -850,7 +852,6 @@ class Config
     /**
      * @psalm-suppress MixedMethodCall
      * @psalm-suppress MixedAssignment
-     * @psalm-suppress MixedOperand
      * @psalm-suppress MixedArgument
      * @psalm-suppress MixedPropertyFetch
      *
@@ -997,7 +998,7 @@ class Config
             $attribute_text = (int) $config_xml['errorLevel'];
 
             if (!in_array($attribute_text, [1, 2, 3, 4, 5, 6, 7, 8], true)) {
-                throw new Exception\ConfigException(
+                throw new ConfigException(
                     'Invalid error level ' . $config_xml['errorLevel']
                 );
             }
@@ -1130,7 +1131,7 @@ class Config
                 $file_path = realpath($stub_file_name);
 
                 if (!$file_path) {
-                    throw new Exception\ConfigException(
+                    throw new ConfigException(
                         'Cannot resolve stubfile path '
                             . rtrim($config->base_dir, DIRECTORY_SEPARATOR)
                             . DIRECTORY_SEPARATOR
@@ -1254,7 +1255,7 @@ class Config
                 $path = $this->base_dir . (string)$extension['scanner'];
 
                 if (!file_exists($path)) {
-                    throw new Exception\ConfigException('Error parsing config: cannot find file ' . $path);
+                    throw new ConfigException('Error parsing config: cannot find file ' . $path);
                 }
 
                 $this->filetype_scanner_paths[$extension_name] = $path;
@@ -1264,7 +1265,7 @@ class Config
                 $path = $this->base_dir . (string)$extension['checker'];
 
                 if (!file_exists($path)) {
-                    throw new Exception\ConfigException('Error parsing config: cannot find file ' . $path);
+                    throw new ConfigException('Error parsing config: cannot find file ' . $path);
                 }
 
                 $this->filetype_analyzer_paths[$extension_name] = $path;
@@ -1294,8 +1295,6 @@ class Config
 
     /**
      * Initialises all the plugins (done once the config is fully loaded)
-     *
-     * @psalm-suppress MixedAssignment
      */
     public function initializePlugins(ProjectAnalyzer $project_analyzer): void
     {
@@ -1332,7 +1331,7 @@ class Config
                 /**
                  * @psalm-suppress InvalidStringClass
                  *
-                 * @var Plugin\PluginEntryPointInterface
+                 * @var PluginEntryPointInterface
                  */
                 $plugin_object = new $plugin_class_name;
                 $plugin_object($socket, $plugin_config);
@@ -2065,10 +2064,6 @@ class Config
         $this->include_collector = $include_collector;
     }
 
-    /**
-     * @psalm-suppress MixedAssignment
-     * @psalm-suppress MixedArrayAccess
-     */
     public function visitComposerAutoloadFiles(ProjectAnalyzer $project_analyzer, ?Progress $progress = null): void
     {
         if ($progress === null) {
